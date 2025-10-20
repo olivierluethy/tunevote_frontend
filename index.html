@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>YouTube Music Queue Player</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        text-align: center;
+        padding: 2rem;
+        background: #f4f4f4;
+      }
+      h1 {
+        margin-bottom: 1rem;
+      }
+      #player {
+        width: 0;
+        height: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .search-section {
+        margin-bottom: 1.5rem;
+      }
+      input[type="text"] {
+        width: 60%;
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+      }
+      button {
+        margin-left: 0.5rem;
+        padding: 0.5rem 1rem;
+        border: none;
+        background: #007bff;
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      .search-results {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .result-item {
+        width: 200px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+        padding: 0.5rem;
+      }
+      .result-item img {
+        width: 100%;
+        border-radius: 10px;
+      }
+      .queue {
+        margin-top: 2rem;
+      }
+      .queue-item {
+        background: white;
+        padding: 0.5rem;
+        margin: 0.5rem auto;
+        width: 60%;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+      .pause-item {
+        background: #ffe3e3;
+      }
+      .controls {
+        margin-top: 1rem;
+      }
+      input[type="range"] {
+        width: 60%;
+      }
+      .time {
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+      }
+      .current-song {
+        margin-top: 2rem;
+      }
+      .current-song img {
+        width: 300px;
+        border-radius: 12px;
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎧 YouTube Music Queue Player</h1>
+
+    <div class="search-section">
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="YouTube Musik suchen..."
+      />
+      <button onclick="searchVideos()">🔍 Suchen</button>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+
+    <div class="queue">
+      <h2>🎵 Aktuelle Queue</h2>
+      <button onclick="addPause()">➕ Pause hinzufügen (30 Sek.)</button>
+      <div id="queueList"></div>
+    </div>
+
+    <div class="controls">
+      <button onclick="startQueue()">▶️ Queue starten</button>
+      <button onclick="pauseVideo()">⏸️ Pause</button>
+      <button onclick="resumeVideo()">⏯️ Weiter</button>
+      <button onclick="stopQueue()">⏹️ Stop</button>
+      <br /><br />
+      <input
+        id="seekBar"
+        type="range"
+        min="0"
+        max="0"
+        value="0"
+        step="0.1"
+        oninput="seekVideo(this.value)"
+      />
+      <div class="time" id="timeDisplay">0:00 / 0:00</div>
+    </div>
+
+    <div class="current-song" id="currentSong"></div>
+
+    <div id="player"></div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+      let player;
+      let queue = [];
+      let currentIndex = 0;
+      let updateInterval;
+      let isPaused = false;
+      let isPlayingPause = false;
+
+      // YouTube Player API
+      function onYouTubeIframeAPIReady() {
+        player = new YT.Player("player", {
+          playerVars: { controls: 0, rel: 0, modestbranding: 1 },
+          events: {
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange,
+          },
+        });
+      }
+
+      function onPlayerReady() {
+        updateInterval = setInterval(updateSeekBar, 500);
+      }
+
+      async function searchVideos() {
+        const query = document.getElementById("searchInput").value.trim();
+        if (!query) return;
+        const res = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&q=${encodeURIComponent(
+            query
+          )}&key=__REDACTED_GOOGLE_KEY__`
+        );
+        const data = await res.json();
+        const resultsDiv = document.getElementById("searchResults");
+        resultsDiv.innerHTML = "";
+        data.items.forEach((item) => {
+          const vid = item.id.videoId;
+          const title = item.snippet.title;
+          const thumb = item.snippet.thumbnails.medium.url;
+          const div = document.createElement("div");
+          div.className = "result-item";
+          div.innerHTML = `
+            <img src="${thumb}" alt="${title}">
+            <p>${title}</p>
+            <button onclick="addToQueue('${vid}', '${encodeURIComponent(
+            title
+          )}', '${thumb}')">➕ Zur Queue</button>
+          `;
+          resultsDiv.appendChild(div);
+        });
+      }
+
+      function addToQueue(videoId, title, thumbnail) {
+        queue.push({
+          type: "video",
+          videoId,
+          title: decodeURIComponent(title),
+          thumbnail,
+        });
+        renderQueue();
+      }
+
+      function addPause() {
+        queue.push({ type: "pause", duration: 30 });
+        renderQueue();
+      }
+
+      function renderQueue() {
+        const qDiv = document.getElementById("queueList");
+        qDiv.innerHTML = "";
+        queue.forEach((item, i) => {
+          const div = document.createElement("div");
+          div.className = "queue-item" + (item.type === "pause" ? " pause-item" : "");
+          div.innerHTML =
+            item.type === "pause"
+              ? `<strong>⏸️ Pause – ${item.duration}s</strong>`
+              : `<span>${i + 1}. ${item.title}</span>
+                 <button onclick="removeFromQueue(${i})">🗑️</button>`;
+          qDiv.appendChild(div);
+        });
+      }
+
+      function removeFromQueue(index) {
+        queue.splice(index, 1);
+        renderQueue();
+      }
+
+      function startQueue() {
+        if (queue.length === 0) return alert("Keine Songs in der Queue!");
+        currentIndex = 0;
+        playNext();
+      }
+
+      function playNext() {
+        if (currentIndex >= queue.length) {
+          document.getElementById("currentSong").innerHTML = "<h3>🎉 Queue beendet!</h3>";
+          return;
+        }
+
+        const item = queue[currentIndex];
+        if (item.type === "pause") {
+          isPlayingPause = true;
+          document.getElementById("currentSong").innerHTML = `<h3>⏸️ ${item.duration}s Pause...</h3>`;
+          setTimeout(() => {
+            isPlayingPause = false;
+            currentIndex++;
+            playNext();
+          }, item.duration * 1000);
+          return;
+        }
+
+        player.loadVideoById(item.videoId);
+        document.getElementById(
+          "currentSong"
+        ).innerHTML = `<h3>🎵 Jetzt läuft:</h3><p>${item.title}</p><img src="${item.thumbnail}" />`;
+      }
+
+      function onPlayerStateChange(event) {
+        if (event.data === YT.PlayerState.ENDED && !isPlayingPause) {
+          currentIndex++;
+          playNext();
+        }
+      }
+
+      function pauseVideo() {
+        isPaused = true;
+        player.pauseVideo();
+      }
+
+      function resumeVideo() {
+        isPaused = false;
+        player.playVideo();
+      }
+
+      function stopQueue() {
+        queue = [];
+        currentIndex = 0;
+        player.stopVideo();
+        document.getElementById("currentSong").innerHTML = "";
+        renderQueue();
+      }
+
+      function updateSeekBar() {
+        if (!player || !player.getCurrentTime) return;
+        const current = player.getCurrentTime();
+        const total = player.getDuration();
+        if (!isNaN(current) && total > 0) {
+          const seekBar = document.getElementById("seekBar");
+          seekBar.max = total;
+          seekBar.value = current;
+          document.getElementById("timeDisplay").textContent =
+            formatTime(current) + " / " + formatTime(total);
+        }
+      }
+
+      function seekVideo(seconds) {
+        player.seekTo(parseFloat(seconds), true);
+      }
+
+      function formatTime(sec) {
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60)
+          .toString()
+          .padStart(2, "0");
+        return `${m}:${s}`;
+      }
+    </script>
+  </body>
+</html>
