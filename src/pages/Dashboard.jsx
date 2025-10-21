@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -6,79 +7,73 @@ import axios from 'axios';
 export default function Dashboard() {
   const navigate = useNavigate();
   const username = localStorage.getItem('username');
-  const token = localStorage.getItem('token');
 
   const [sessions, setSessions] = useState([]);
   const [newSessionTitle, setNewSessionTitle] = useState('');
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [queue, setQueue] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const token = localStorage.getItem('token');
 
   useEffect(() => {
-    fetchSessions();
-  }, []);
+    if (token) fetchSessions();
+  }, [token]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    localStorage.removeItem('userId');
     navigate('/login');
   };
 
   const fetchSessions = async () => {
-    const res = await axios.get('http://localhost:4000/sessions');
-    setSessions(res.data);
+    if (!token) return;
+    try {
+      const res = await axios.get('http://localhost:4000/sessions', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSessions(res.data);
+    } catch (err) {
+      if (err.response?.status === 401) {
+        handleLogout();
+      } else {
+        console.error('Fehler beim Laden der Sessions:', err);
+      }
+    }
   };
 
   const createSession = async () => {
-    if (!newSessionTitle) return;
-    const res = await axios.post('http://localhost:4000/sessions', {
-      title: newSessionTitle,
-      userId: 1, // TODO: aus Token oder Backend bestimmen
-    });
-    fetchSessions();
-    setNewSessionTitle('');
+    if (!newSessionTitle.trim() || loading) return;
+    setLoading(true);
+    try {
+      const res = await axios.post(
+        'http://localhost:4000/sessions',
+        { title: newSessionTitle },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSessions(prev => [res.data, ...prev]);
+      setNewSessionTitle('');
+    } catch (err) {
+      console.error(err);
+      alert('Fehler beim Erstellen der Session');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const selectSession = async (session) => {
-    setSelectedSession(session);
-    const res = await axios.get(`http://localhost:4000/sessions/${session.id}/queue`);
-    setQueue(res.data);
+  const openSession = (session) => {
+    navigate(`/session/${session.id}`);
   };
 
-  const searchVideos = async () => {
-    if (!searchQuery) return;
-    const res = await axios.get(
-      `https://www.googleapis.com/youtube/v3/search`,
-      {
-        params: {
-          part: 'snippet',
-          type: 'video',
-          maxResults: 5,
-          q: searchQuery,
-          key: 'YOUR_YOUTUBE_API_KEY',
-        },
-      }
-    );
-    setSearchResults(res.data.items);
+  const copyJoinLink = (sessionId) => {
+    const link = `${window.location.origin}/session/${sessionId}`;
+    navigator.clipboard.writeText(link);
+    alert('Link kopiert!');
   };
 
-  const addToQueue = async (video) => {
-    if (!selectedSession) return;
-    await axios.post(`http://localhost:4000/sessions/${selectedSession.id}/queue`, {
-      videoId: video.id.videoId,
-      title: video.snippet.title,
-      thumbnail: video.snippet.thumbnails.medium.url,
-      addedBy: 1, // TODO: aus Token bestimmen
-    });
-    const res = await axios.get(`http://localhost:4000/sessions/${selectedSession.id}/queue`);
-    setQueue(res.data);
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(`http://localhost:3000/session/${selectedSession.id}`);
-    alert('Link copied to clipboard!');
-  };
+  if (!token) {
+    navigate('/login');
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
@@ -95,105 +90,67 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Create New Session</h2>
-          <div className="flex items-center space-x-4">
+        {/* Session erstellen */}
+        <section className="mb-10 bg-white p-6 rounded-lg shadow">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Neue Session erstellen</h2>
+          <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Session title"
-              className="flex-1 border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="z.B. Chill Abend"
+              className="flex-1 border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
               value={newSessionTitle}
               onChange={(e) => setNewSessionTitle(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && createSession()}
+              disabled={loading}
             />
             <button
               onClick={createSession}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition duration-200"
+              disabled={loading || !newSessionTitle.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-6 rounded-lg transition"
             >
-              Create
+              {loading ? '...' : 'Erstellen'}
             </button>
           </div>
         </section>
 
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">All Sessions</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sessions.map((s) => (
-              <div
-                key={s.id}
-                className="bg-white p-5 rounded-lg shadow-lg hover:shadow-xl transition duration-300 cursor-pointer border border-gray-100"
-                onClick={() => selectSession(s)}
-              >
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">{s.title}</h3>
-                <p className="text-sm text-gray-600">Host: {s.host}</p>
-                <p className="text-xs text-gray-500">{new Date(s.created_at).toLocaleString()}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {selectedSession && (
-          <section className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">Session: {selectedSession.title}</h2>
-            <div className="mb-6">
-              <div className="flex flex-col items-center space-y-4">
-                <QRCodeCanvas value={`http://localhost:3000/session/${selectedSession.id}`} size={150} />
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Share this session:</p>
-                  <button
-                    onClick={handleCopyLink}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
-                  >
-                    Copy Link
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Search YouTube</h3>
-              <div className="flex items-center space-x-4">
-                <input
-                  type="text"
-                  placeholder="Search for videos"
-                  className="flex-1 border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <button
-                  onClick={searchVideos}
-                  className="bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-5 rounded-lg transition duration-200"
+        {/* Sessions Liste */}
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-6">Deine Sessions</h2>
+          {sessions.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">Noch keine Sessions. Erstelle eine!</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {sessions.map((s) => (
+                <div
+                  key={s.id}
+                  className="bg-white p-5 rounded-lg shadow hover:shadow-xl transition cursor-pointer border border-gray-100"
+                  onClick={() => openSession(s)}
                 >
-                  Search
-                </button>
-              </div>
-            </div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{s.title}</h3>
+                  <p className="text-sm text-gray-600 mb-2">Host: {s.host}</p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {new Date(s.created_at).toLocaleString()}
+                  </p>
 
-            <div className="mb-6">
-              {searchResults.map((video) => (
-                <div key={video.id.videoId} className="flex items-center mb-4 p-3 bg-gray-50 rounded-lg">
-                  <img src={video.snippet.thumbnails.default.url} alt="" className="w-16 h-16 rounded" />
-                  <p className="flex-1 ml-4 text-gray-800">{video.snippet.title}</p>
-                  <button
-                    onClick={() => addToQueue(video)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
-                  >
-                    Add
-                  </button>
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="flex-1">
+                      <QRCodeCanvas value={`${window.location.origin}/session/${s.id}`} size={80} />
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyJoinLink(s.id);
+                      }}
+                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-2 rounded transition"
+                    >
+                      Link kopieren
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-
-            <div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Queue</h3>
-              {queue.map((item) => (
-                <div key={item.id} className="flex items-center mb-4 p-3 bg-gray-50 rounded-lg">
-                  {item.thumbnail && <img src={item.thumbnail} className="w-16 h-16 rounded" />}
-                  <p className="flex-1 ml-4 text-gray-800">{item.title}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+          )}
+        </section>
       </main>
     </div>
   );

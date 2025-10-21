@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import SessionPage from './components/SessionPage';
 
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -25,17 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             </RequireAuth>
           }
         />
-        {/* Redirect root to dashboard if logged in, else login */}
-        <Route
-          path="/"
-          element={
-            localStorage.getItem('token') ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
+        <Route path="/session/:sessionId" element={<SessionPage />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
