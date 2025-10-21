@@ -105,22 +105,29 @@ const SessionPage = () => {
 
   // === Auth Headers ===
   const getAuthHeaders = () => {
-    const headers = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (guestToken) headers['x-guest-token'] = guestToken;
-    return headers;
-  };
+  const headers = {};
+  const token = localStorage.getItem('token');
+  const guestToken = localStorage.getItem('guestToken');
+
+  if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
+  else if (guestToken && !token) headers['x-guest-token'] = guestToken;
+  return headers;
+};
+
 
   // === Daten laden ===
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes, propRes] = await Promise.all([
-        axios.get(`http://localhost:5173/sessions/${sessionId}`, { headers: getAuthHeaders() }),
-        axios.get(`http://localhost:5173/sessions/${sessionId}/queue`, { headers: getAuthHeaders() }),
-        axios.get(`http://localhost:5173/sessions/${sessionId}/proposals`, { headers: getAuthHeaders() }),
-      ]);
+  axios.get(`http://localhost:4000/sessions/${sessionId}`, { headers: getAuthHeaders() }),
+  axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, { headers: getAuthHeaders() }),
+  axios.get(`http://localhost:4000/sessions/${sessionId}/proposals`, { headers: getAuthHeaders() }),
+]);
+
 
       setSession(sessRes.data);
+      console.log('Queue Response:', queueRes.data);
+
       setQueue(queueRes.data);
       setProposals(propRes.data);
 
