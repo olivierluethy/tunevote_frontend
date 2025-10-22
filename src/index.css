@@ -7,5 +7,10 @@
   line-height: 1.5;
   font-weight: 400;
 }
+#youtube-player {
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
 
 /* Remove or adjust other styles as needed, but keep the Tailwind directives */
