@@ -17,8 +17,10 @@ export default function Login() {
       const { token, username } = res.data;
 
       // Store JWT and username in localStorage
-      localStorage.setItem('token', token);
-      localStorage.setItem('username', username);
+      const payload = JSON.parse(atob(token.split('.')[1])); // JWT payload decodieren
+localStorage.setItem('token', token);
+localStorage.setItem('username', username);
+localStorage.setItem('userId', payload.id); // jetzt richtig
 
       // Redirect to dashboard
       navigate('/dashboard');
