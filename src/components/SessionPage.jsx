@@ -1,4 +1,3 @@
-// src/components/SessionPage.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -22,7 +21,9 @@ const SessionPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isHost, setIsHost] = useState(false);
-  const [nickname, setNickname] = useState("Gast");
+  const [nickname, setNickname] = useState(
+    () => localStorage.getItem("guestName") || "Gast",
+  );
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [volume, setVolume] = useState(50);
   const [isMutedForMe, setIsMutedForMe] = useState(
@@ -37,8 +38,11 @@ const SessionPage = () => {
 
   const getAuthHeaders = () => {
     const headers = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    else if (guestToken) headers["x-guest-token"] = guestToken;
+    const token = localStorage.getItem("token");
+    const guestToken = localStorage.getItem("guestToken");
+
+    if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
+    else if (guestToken && !token) headers["x-guest-token"] = guestToken;
     return headers;
   };
 
@@ -77,61 +81,56 @@ const SessionPage = () => {
 
   // === Socket.IO ===
   useEffect(() => {
-  if (!token && !guestToken) return;
+    if (!token && !guestToken) return;
 
-  socketRef.current = io(SOCKET_SERVER, {
-    query: { sessionId },
-    auth: token ? { token } : { guestToken },
-  });
-
-  socketRef.current.on("connect_error", (err) =>
-    console.warn("Socket error", err),
-  );
-  socketRef.current.on("queue_updated", loadSessionData);
-  socketRef.current.on("session_started", (data) => {
-  console.log("Session started broadcast:", data);
-  loadSessionData();
-  setSessionLive(true); // 👉 Damit der Join-Button aktiv wird
-
-  // Falls User schon joined ist, sofort syncen
-  if (isLiveJoined && data.firstVideoId) {
-    syncPlayback({
-      current_video_id: data.firstVideoId,
-      video_start_time: data.video_start_time,
-      is_playing: true,
+    socketRef.current = io(SOCKET_SERVER, {
+      query: { sessionId },
+      auth: token ? { token } : { guestToken },
     });
-  }
 
-  // Player reset nur, wenn Host ihn selbst neu startet
-  if (isHost && playerRef.current) {
-    playerRef.current.stopVideo();
-    playerRef.current.destroy();
-    playerRef.current = null;
-  }
-});
+    socketRef.current.on("connect_error", (err) =>
+      console.warn("Socket error", err),
+    );
+    socketRef.current.on("queue_updated", loadSessionData);
+    socketRef.current.on("session_started", (data) => {
+      console.log("Session started broadcast:", data);
+      loadSessionData();
+      setSessionLive(true);
+      if (isLiveJoined && data.firstVideoId) {
+        syncPlayback({
+          current_video_id: data.firstVideoId,
+          video_start_time: data.video_start_time,
+          is_playing: true,
+        });
+      }
+      if (isHost && playerRef.current) {
+        playerRef.current.stopVideo();
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+    });
 
+    socketRef.current.on("playback_sync", (data) => {
+      if (!isLiveJoined) return;
+      syncPlayback(data);
+    });
 
-  socketRef.current.on("playback_sync", (data) => {
-    if (!isLiveJoined) return;
-    syncPlayback(data);
-  });
+    socketRef.current.on("session_ended", ({ message }) => {
+      alert(message);
+      setIsLiveJoined(false);
+      setCurrentSong(null);
+      setSessionLive(false);
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+      if (playerRef.current) {
+        playerRef.current.stopVideo();
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+      loadSessionData(); // Reload to restore UI
+    });
 
-  socketRef.current.on("session_ended", ({ message }) => {
-    alert(message);
-    setIsLiveJoined(false);
-    setCurrentSong(null);
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    if (playerRef.current) {
-      playerRef.current.stopVideo();
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-    setSessionLive(false);
-    loadSessionData();
-  });
-
-  return () => socketRef.current.disconnect();
-}, [sessionId, token, guestToken, loadSessionData, isLiveJoined]);
+    return () => socketRef.current.disconnect();
+  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined, isHost]);
 
   // === YouTube Player API laden ===
   useEffect(() => {
@@ -150,42 +149,47 @@ const SessionPage = () => {
 
   // === Player erstellen (für alle Clients) ===
   const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
-  // Log für den Start eines neuen Songs
-  console.log(`[createPlayer] Lade Song: videoId=${videoId}, Startzeit=${startSeconds}s, Autoplay=${shouldPlay}`);
+    console.log(
+      `[createPlayer] Lade Song: videoId=${videoId}, Startzeit=${startSeconds}s, Autoplay=${shouldPlay}`,
+    );
 
-  if (playerRef.current) {
-    playerRef.current.loadVideoById({ videoId, startSeconds });
-    if (shouldPlay) {
-      playerRef.current.playVideo();
-      console.log(`[createPlayer] Bestehender Player spielt Song ab: videoId=${videoId}`);
+    if (playerRef.current) {
+      playerRef.current.loadVideoById({ videoId, startSeconds });
+      if (shouldPlay) {
+        playerRef.current.playVideo();
+        console.log(
+          `[createPlayer] Bestehender Player spielt Song ab: videoId=${videoId}`,
+        );
+      }
+      return;
     }
-    return;
-  }
 
-  playerRef.current = new window.YT.Player("youtube-player", {
-    height: 0,
-    width: 0,
-    videoId,
-    playerVars: {
-      start: Math.floor(startSeconds),
-      autoplay: shouldPlay ? 1 : 0,
-      controls: 0,
-      modestbranding: 1,
-      rel: 0,
-      fs: 0,
-    },
-    events: {
-      onReady: () => {
-        playerRef.current.seekTo(startSeconds, true);
-        if (shouldPlay) {
-          playerRef.current.playVideo();
-          console.log(`[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`);
-        }
-        playerRef.current.setVolume(isMutedForMe ? 0 : volume);
+    playerRef.current = new window.YT.Player("youtube-player", {
+      height: 0,
+      width: 0,
+      videoId,
+      playerVars: {
+        start: Math.floor(startSeconds),
+        autoplay: shouldPlay ? 1 : 0,
+        controls: 0,
+        modestbranding: 1,
+        rel: 0,
+        fs: 0,
       },
-    },
-  });
-};
+      events: {
+        onReady: () => {
+          playerRef.current.seekTo(startSeconds, true);
+          if (shouldPlay) {
+            playerRef.current.playVideo();
+            console.log(
+              `[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`,
+            );
+          }
+          playerRef.current.setVolume(isMutedForMe ? 0 : volume);
+        },
+      },
+    });
+  };
 
   // === Sync Playback ===
   const syncPlayback = ({ current_video_id, video_start_time, is_playing }) => {
@@ -203,95 +207,99 @@ const SessionPage = () => {
         queue.find((i) => i.video_id === current_video_id)?.thumbnail || "",
     });
 
-    // Logge hier, wenn ein neuer Song abgespielt wird
-    console.log(`[Playback] Neuer Song wird abgespielt: videoId=${current_video_id}, Titel=${queue.find((i) => i.video_id === current_video_id)?.title || "Unbekannt"}`);
+    console.log(
+      `[Playback] Neuer Song wird abgespielt: videoId=${current_video_id}, Titel=${queue.find((i) => i.video_id === current_video_id)?.title || "Unbekannt"}`,
+    );
 
-    // Hier wird der Song abgespielt
     createPlayer(current_video_id, progress, is_playing);
   };
 
   // === Join Live ===
   const joinLive = async () => {
-  if (!sessionLive) return;
-  setIsLiveJoined(true);
+    if (!sessionLive) return;
+    setIsLiveJoined(true);
 
-  try {
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/join-live`,
-      {},
-      { headers: getAuthHeaders() }
-    );
-    const { data } = await axios.get(
-      `http://localhost:4000/sessions/${sessionId}/playback-sync`
-    );
-
-    if (data.current_video_id && data.video_start_time) {
-      syncPlayback(data); // Gäste starten die Musik
-    }
-  } catch (err) {
-    console.error("Sync failed", err);
-  }
-
-  // Alle 10s nachsync (Drift-Korrektur)
-  syncIntervalRef.current = setInterval(async () => {
-    if (!isLiveJoined) return;
     try {
-      const { data } = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/playback-sync`
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
+        {},
+        { headers: getAuthHeaders() },
       );
+      const { data } = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+      );
+
       if (data.current_video_id && data.video_start_time) {
-        const elapsed = (Date.now() - data.video_start_time) / 1000;
-        const current = playerRef.current?.getCurrentTime() || 0;
-        if (Math.abs(current - elapsed) > 2) {
-          playerRef.current?.seekTo(elapsed, true);
-        }
+        syncPlayback(data);
       }
-    } catch {}
-  }, 10000);
-};
+    } catch (err) {
+      console.error("Sync failed", err);
+      setIsLiveJoined(false); // Revert on error
+      loadSessionData(); // Reload to ensure UI consistency
+    }
 
+    syncIntervalRef.current = setInterval(async () => {
+      if (!isLiveJoined) return;
+      try {
+        const { data } = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+        );
+        if (data.current_video_id && data.video_start_time) {
+          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const current = playerRef.current?.getCurrentTime() || 0;
+          if (Math.abs(current - elapsed) > 2) {
+            playerRef.current?.seekTo(elapsed, true);
+          }
+        }
+      } catch {}
+    }, 10000);
+  };
 
-
+  // === Leave Live ===
   const leaveLive = async () => {
     setIsLiveJoined(false);
+    setCurrentSong(null); // Clear current song to hide "Now Playing" section
     if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     if (playerRef.current) {
       playerRef.current.pauseVideo();
+      playerRef.current.destroy();
+      playerRef.current = null;
     }
     try {
       await axios.post(
         `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
+      await loadSessionData(); // Reload to restore UI state
     } catch (err) {
       console.error("Leave failed", err);
+      await loadSessionData(); // Reload even on error to ensure UI consistency
     }
   };
 
   // === Start Session (Host) ===
   const startSession = async () => {
-  if (!isHost) return;
+    if (!isHost) return;
 
-  // Bereinige bestehenden Player
-  if (playerRef.current) {
-    playerRef.current.stopVideo();
-    playerRef.current.destroy();
-    playerRef.current = null;
-  }
+    if (playerRef.current) {
+      playerRef.current.stopVideo();
+      playerRef.current.destroy();
+      playerRef.current = null;
+    }
 
-  try {
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/start`,
-      {},
-      { headers: getAuthHeaders() },
-    );
-    loadSessionData();
-  } catch (err) {
-    console.error("Start session failed", err);
-    alert("Fehler beim Starten der Session");
-  }
-};
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/start`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+      loadSessionData();
+    } catch (err) {
+      console.error("Start session failed", err);
+      alert("Fehler beim Starten der Session");
+    }
+  };
 
   // === Volume & Mute ===
   const handleVolumeChange = (e) => {
@@ -359,6 +367,7 @@ const SessionPage = () => {
         nickname,
       });
       localStorage.setItem("guestToken", res.data.guestToken);
+      localStorage.setItem("guestName", nickname);
       setShowGuestModal(false);
       loadSessionData();
     } catch (err) {
@@ -423,20 +432,60 @@ const SessionPage = () => {
             >
               ← Zurück
             </button>
+            {!isHost && (
+              <div className="text-sm text-gray-500">Gast: {nickname}</div>
+            )}
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
           <QRCodeCanvas value={window.location.href} size={100} />
           <button
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
-              alert("Link kopiert!");
+            onClick={async () => {
+              const url = window.location.href;
+              const title = document.title || "Schau dir das an!";
+              const text = "Hier ist ein interessanter Link:";
+
+              if (navigator.share) {
+                try {
+                  await navigator.share({
+                    title,
+                    text,
+                    url,
+                  });
+                  console.log("Link erfolgreich geteilt!");
+                } catch (err) {
+                  console.error("Teilen abgebrochen oder fehlgeschlagen:", err);
+                }
+              } else {
+                // Fallback: Link kopieren
+                await navigator.clipboard.writeText(url);
+                alert("Link kopiert!");
+              }
             }}
-            className="text-blue-600 hover:underline text-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-lg shadow-md hover:from-blue-700 hover:to-indigo-700 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
           >
-            {window.location.href}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5"
+            >
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="8.59" y1="10.49" x2="15.42" y2="6.51" />
+            </svg>
+            Link teilen
           </button>
+
           {sessionLive && (
             <button
               onClick={isLiveJoined ? leaveLive : joinLive}
@@ -452,8 +501,7 @@ const SessionPage = () => {
           )}
         </div>
 
-        {/* Jetzt läuft */}
-        {sessionLive && currentSong && (
+        {sessionLive && currentSong && isLiveJoined && (
           <div className="bg-green-100 border-2 border-green-500 p-4 rounded-lg shadow mb-6">
             <h3 className="font-bold text-green-800 flex items-center gap-2">
               Jetzt läuft
@@ -472,7 +520,6 @@ const SessionPage = () => {
           </div>
         )}
 
-        {/* Volume Control */}
         {isLiveJoined && (
           <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-wrap items-center gap-3">
             <input
@@ -494,7 +541,6 @@ const SessionPage = () => {
           </div>
         )}
 
-        {/* YouTube Suche */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">YouTube Suche</h2>
           <div className="flex gap-3 mb-3">
@@ -541,14 +587,14 @@ const SessionPage = () => {
           ))}
         </div>
 
-        {/* Queue */}
         <div className="bg-white p-4 rounded-lg shadow">
           <h2 className="text-xl font-semibold mb-3">Queue</h2>
           {queue.length === 0 ? (
             <p className="text-gray-500">Leer</p>
           ) : (
             queue.map((item) => {
-              const isCurrent = currentSong?.videoId === item.video_id;
+              const isCurrent =
+                currentSong?.videoId === item.video_id && isLiveJoined;
               return (
                 <div
                   key={item.id}
@@ -578,7 +624,6 @@ const SessionPage = () => {
           )}
         </div>
 
-        {/* YouTube Player (versteckt) */}
         {isLiveJoined && (
           <div
             id="youtube-player"
