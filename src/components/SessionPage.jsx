@@ -156,38 +156,48 @@ const SessionPage = () => {
 
   // === Player erstellen (für alle Clients) ===
   const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
-    if (playerRef.current) {
-      playerRef.current.loadVideoById({ videoId, startSeconds });
-      if (shouldPlay) playerRef.current.playVideo();
-      return;
-    }
+  // Log für den Start eines neuen Songs
+  console.log(`[createPlayer] Lade Song: videoId=${videoId}, Startzeit=${startSeconds}s, Autoplay=${shouldPlay}`);
 
-    playerRef.current = new window.YT.Player("youtube-player", {
-      height: 0,
-      width: 0,
-      videoId,
-      playerVars: {
-        start: Math.floor(startSeconds),
-        autoplay: shouldPlay ? 1 : 0,
-        controls: 0,
-        modestbranding: 1,
-        rel: 0,
-        fs: 0,
+  if (playerRef.current) {
+    playerRef.current.loadVideoById({ videoId, startSeconds });
+    if (shouldPlay) {
+      playerRef.current.playVideo();
+      console.log(`[createPlayer] Bestehender Player spielt Song ab: videoId=${videoId}`);
+    }
+    return;
+  }
+
+  playerRef.current = new window.YT.Player("youtube-player", {
+    height: 0,
+    width: 0,
+    videoId,
+    playerVars: {
+      start: Math.floor(startSeconds),
+      autoplay: shouldPlay ? 1 : 0,
+      controls: 0,
+      modestbranding: 1,
+      rel: 0,
+      fs: 0,
+    },
+    events: {
+      onReady: () => {
+        playerRef.current.seekTo(startSeconds, true);
+        if (shouldPlay) {
+          playerRef.current.playVideo();
+          console.log(`[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`);
+        }
+        playerRef.current.setVolume(isMutedForMe ? 0 : volume);
       },
-      events: {
-        onReady: () => {
-          playerRef.current.seekTo(startSeconds, true);
-          if (shouldPlay) playerRef.current.playVideo();
-          playerRef.current.setVolume(isMutedForMe ? 0 : volume);
-        },
-        onStateChange: (e) => {
-          if (e.data === window.YT.PlayerState.ENDED && isHost) {
-            playNextSong();
-          }
-        },
+      onStateChange: (e) => {
+        if (e.data === window.YT.PlayerState.ENDED && isHost) {
+          console.log(`[createPlayer] Song beendet: videoId=${videoId}, Host wechselt zum nächsten Song`);
+          playNextSong();
+        }
       },
-    });
-  };
+    },
+  });
+};
 
   // === Sync Playback ===
   const syncPlayback = ({ current_video_id, video_start_time, is_playing }) => {
@@ -205,49 +215,49 @@ const SessionPage = () => {
         queue.find((i) => i.video_id === current_video_id)?.thumbnail || "",
     });
 
+    // Logge hier, wenn ein neuer Song abgespielt wird
+    console.log(`[Playback] Neuer Song wird abgespielt: videoId=${current_video_id}, Titel=${queue.find((i) => i.video_id === current_video_id)?.title || "Unbekannt"}`);
+
+    // Hier wird der Song abgespielt
     createPlayer(current_video_id, progress, is_playing);
   };
 
   // === Join Live ===
   const joinLive = async () => {
-    if (!sessionLive) return;
-    setIsLiveJoined(true);
+  if (!sessionLive) return;
+  setIsLiveJoined(true);
 
+  try {
+    const { data } = await axios.get(
+      `http://localhost:4000/sessions/${sessionId}/playback-sync`
+    );
+
+    if (data.current_video_id && data.video_start_time) {
+      syncPlayback(data); // Gäste starten die Musik
+    }
+  } catch (err) {
+    console.error("Sync failed", err);
+  }
+
+  // Alle 10s nachsync (Drift-Korrektur)
+  syncIntervalRef.current = setInterval(async () => {
+    if (!isLiveJoined) return;
     try {
       const { data } = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-        {
-          headers: getAuthHeaders(),
-        },
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`
       );
-
       if (data.current_video_id && data.video_start_time) {
-        syncPlayback(data);
-      }
-    } catch (err) {
-      console.error("Sync failed", err);
-    }
-
-    // Alle 10s nachsync (Drift-Korrektur)
-    syncIntervalRef.current = setInterval(async () => {
-      if (!isLiveJoined) return;
-      try {
-        const { data } = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-          {
-            headers: getAuthHeaders(),
-          },
-        );
-        if (data.current_video_id && data.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
-          const current = playerRef.current?.getCurrentTime() || 0;
-          if (Math.abs(current - elapsed) > 2) {
-            playerRef.current?.seekTo(elapsed, true);
-          }
+        const elapsed = (Date.now() - data.video_start_time) / 1000;
+        const current = playerRef.current?.getCurrentTime() || 0;
+        if (Math.abs(current - elapsed) > 2) {
+          playerRef.current?.seekTo(elapsed, true);
         }
-      } catch {}
-    }, 10000);
-  };
+      }
+    } catch {}
+  }, 10000);
+};
+
+
 
   const leaveLive = () => {
     setIsLiveJoined(false);
