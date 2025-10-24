@@ -77,43 +77,67 @@ const SessionPage = () => {
 
   // === Socket.IO ===
   useEffect(() => {
-    if (!token && !guestToken) return;
+  if (!token && !guestToken) return;
 
-    socketRef.current = io(SOCKET_SERVER, {
-      query: { sessionId },
-      auth: token ? { token } : { guestToken },
+  socketRef.current = io(SOCKET_SERVER, {
+    query: { sessionId },
+    auth: token ? { token } : { guestToken },
+  });
+
+  socketRef.current.on("connect_error", (err) =>
+    console.warn("Socket error", err),
+  );
+  socketRef.current.on("queue_updated", loadSessionData);
+  socketRef.current.on("session_started", (data) => {
+  console.log("Session started broadcast:", data);
+  loadSessionData();
+  setSessionLive(true); // 👉 Damit der Join-Button aktiv wird
+
+  // Falls User schon joined ist, sofort syncen
+  if (isLiveJoined && data.firstVideoId) {
+    syncPlayback({
+      current_video_id: data.firstVideoId,
+      video_start_time: data.video_start_time,
+      is_playing: true,
     });
+  }
 
-    socketRef.current.on("connect_error", (err) =>
-      console.warn("Socket error", err),
-    );
-    socketRef.current.on("queue_updated", loadSessionData);
-    socketRef.current.on("session_started", () => {
-      loadSessionData();
-      setIsLiveJoined(false);
-    });
+  // Player reset nur, wenn Host ihn selbst neu startet
+  if (isHost && playerRef.current) {
+    playerRef.current.stopVideo();
+    playerRef.current.destroy();
+    playerRef.current = null;
+  }
+});
 
-    socketRef.current.on("playback_sync", (data) => {
-      if (!isLiveJoined) return;
-      syncPlayback(data);
-    });
 
-    socketRef.current.on("session_ended", ({ message }) => {
-      alert(message); // Or update UI to show session ended
-      setIsLiveJoined(false); // Stop joining live session
-      setCurrentSong(null); // Clear current song
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current); // Stop sync interval
-      if (playerRef.current) {
-        playerRef.current.stopVideo(); // Stop YouTube player
-        playerRef.current.destroy(); // Destroy player instance
-        playerRef.current = null; // Clear player reference
-      }
-      setSessionLive(false); // Update UI to reflect session ended
-      loadSessionData(); // Refresh session data
-    });
+  socketRef.current.on("playback_sync", (data) => {
+    if (!isLiveJoined) return;
+    syncPlayback(data);
+  });
 
-    return () => socketRef.current.disconnect();
-  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined]);
+  socketRef.current.on("host_song_start", (data) => {
+    if (!isLiveJoined) return;
+    // Optional: Loggen oder andere Aktionen, aber syncPlayback übernimmt die Wiedergabe
+    console.log("Host started song", data);
+  });
+
+  socketRef.current.on("session_ended", ({ message }) => {
+    alert(message);
+    setIsLiveJoined(false);
+    setCurrentSong(null);
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    if (playerRef.current) {
+      playerRef.current.stopVideo();
+      playerRef.current.destroy();
+      playerRef.current = null;
+    }
+    setSessionLive(false);
+    loadSessionData();
+  });
+
+  return () => socketRef.current.disconnect();
+}, [sessionId, token, guestToken, loadSessionData, isLiveJoined]);
 
   // === YouTube Player API laden ===
   useEffect(() => {
@@ -254,19 +278,27 @@ const SessionPage = () => {
 
   // === Start Session (Host) ===
   const startSession = async () => {
-    if (!isHost) return;
+  if (!isHost) return;
+
+  // Bereinige bestehenden Player
+  if (playerRef.current) {
+    playerRef.current.stopVideo();
+    playerRef.current.destroy();
+    playerRef.current = null;
+  }
+
+  try {
     await axios.post(
       `http://localhost:4000/sessions/${sessionId}/start`,
       {},
       { headers: getAuthHeaders() },
     );
     loadSessionData();
-
-    // Ersten Song starten
-    if (queue.length > 0 && sessionLive) {
-      setTimeout(playNextSong, 1000);
-    }
-  };
+  } catch (err) {
+    console.error("Start session failed", err);
+    alert("Fehler beim Starten der Session");
+  }
+};
 
   // === Volume & Mute ===
   const handleVolumeChange = (e) => {
