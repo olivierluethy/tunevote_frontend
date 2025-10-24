@@ -116,12 +116,6 @@ const SessionPage = () => {
     syncPlayback(data);
   });
 
-  socketRef.current.on("host_song_start", (data) => {
-    if (!isLiveJoined) return;
-    // Optional: Loggen oder andere Aktionen, aber syncPlayback übernimmt die Wiedergabe
-    console.log("Host started song", data);
-  });
-
   socketRef.current.on("session_ended", ({ message }) => {
     alert(message);
     setIsLiveJoined(false);
@@ -189,12 +183,6 @@ const SessionPage = () => {
         }
         playerRef.current.setVolume(isMutedForMe ? 0 : volume);
       },
-      onStateChange: (e) => {
-        if (e.data === window.YT.PlayerState.ENDED && isHost) {
-          console.log(`[createPlayer] Song beendet: videoId=${videoId}, Host wechselt zum nächsten Song`);
-          playNextSong();
-        }
-      },
     },
   });
 };
@@ -228,6 +216,11 @@ const SessionPage = () => {
   setIsLiveJoined(true);
 
   try {
+    await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/join-live`,
+      {},
+      { headers: getAuthHeaders() }
+    );
     const { data } = await axios.get(
       `http://localhost:4000/sessions/${sessionId}/playback-sync`
     );
@@ -259,31 +252,21 @@ const SessionPage = () => {
 
 
 
-  const leaveLive = () => {
+  const leaveLive = async () => {
     setIsLiveJoined(false);
     if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     if (playerRef.current) {
       playerRef.current.pauseVideo();
     }
-  };
-
-  // === Host: Neuer Song ===
-  const playNextSong = async () => {
-    if (!isHost || queue.length === 0 || !sessionLive) return;
-
-    const next = queue[0];
-    setCurrentSong(next);
-
-    // Server informieren
-    socketRef.current.emit("host_song_start", { videoId: next.video_id });
-
-    // Queue konsumieren
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/queue/consume`,
-      {},
-      { headers: getAuthHeaders() },
-    );
-    loadSessionData();
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+    } catch (err) {
+      console.error("Leave failed", err);
+    }
   };
 
   // === Start Session (Host) ===
