@@ -120,35 +120,60 @@ export default function Dashboard() {
             <p className="text-gray-500 text-center py-8">Noch keine Sessions. Erstelle eine!</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sessions.map((s) => (
-                <div
-                  key={s.id}
-                  className="bg-white p-5 rounded-lg shadow hover:shadow-xl transition cursor-pointer border border-gray-100"
-                  onClick={() => openSession(s)}
-                >
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{s.title}</h3>
-                  <p className="text-sm text-gray-600 mb-2">Host: {s.host}</p>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {new Date(s.created_at).toLocaleString()}
-                  </p>
+  {sessions.map((s) => (
+    <div
+      key={s.id}
+      className="bg-white p-5 rounded-lg shadow hover:shadow-xl transition cursor-pointer border border-gray-100"
+      onClick={() => openSession(s)}
+    >
+      <h3 className="text-lg font-semibold text-gray-800 mb-1">
+        {s.title}
+      </h3>
+      <p className="text-sm text-gray-600 mb-2">Host: {s.host}</p>
+      <p className="text-sm text-gray-600 mb-2">
+        Teilnehmer: {s.participant_count}
+      </p>
 
-                  <div className="flex items-center gap-2 mt-3">
-                    <div className="flex-1">
-                      <QRCodeCanvas value={`${window.location.origin}/session/${s.id}`} size={80} />
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyJoinLink(s.id);
-                      }}
-                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-2 rounded transition"
-                    >
-                      Link kopieren
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <p className="flex items-center gap-2">
+        {s.is_live ? (
+          <span className="flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+            </span>
+            <span className="text-red-600 font-bold text-sm animate-pulse">
+              LIVE
+            </span>
+          </span>
+        ) : (
+          <span className="text-gray-400 text-sm">Offline</span>
+        )}
+      </p>
+
+      <p className="text-xs text-gray-500 mb-3">
+        {new Date(s.created_at).toLocaleString()}
+      </p>
+
+      <div className="flex items-center gap-2 mt-3">
+        <div className="flex-1">
+          <QRCodeCanvas
+            value={`${window.location.origin}/session/${s.id}`}
+            size={80}
+          />
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            copyJoinLink(s.id);
+          }}
+          className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-2 rounded transition"
+        >
+          Link kopieren
+        </button>
+      </div>
+    </div>
+  ))}
+</div>
           )}
         </section>
       </main>

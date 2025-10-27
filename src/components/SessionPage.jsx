@@ -317,7 +317,7 @@ const SessionPage = () => {
 
   // === Suche & Vorschlag ===
   const searchYouTube = async () => {
-    if (!searchQuery.trim() || sessionLive) return;
+    if (!searchQuery.trim()) return;
     const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
     if (!API_KEY) return;
 
@@ -341,7 +341,6 @@ const SessionPage = () => {
   };
 
   const proposeSong = async (video) => {
-    if (sessionLive) return;
     try {
       await axios.post(
         `http://localhost:4000/sessions/${sessionId}/proposals`,
@@ -404,6 +403,7 @@ const SessionPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
+        
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-blue-700">
             Session: {session.title}
@@ -550,21 +550,14 @@ const SessionPage = () => {
               className="flex-1 border rounded p-2"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              disabled={sessionLive}
             />
             <button
               onClick={searchYouTube}
-              disabled={sessionLive}
-              className="bg-green-600 text-white px-4 rounded disabled:opacity-50"
+              className="bg-green-600 text-white px-4 rounded"
             >
               Suchen
             </button>
           </div>
-          {sessionLive && (
-            <p className="text-red-600 text-sm mb-3">
-              Keine Vorschläge mehr möglich.
-            </p>
-          )}
           {searchResults.map((video) => (
             <div
               key={video.id.videoId}
@@ -578,7 +571,6 @@ const SessionPage = () => {
               <div className="flex-1 text-sm">{video.snippet.title}</div>
               <button
                 onClick={() => proposeSong(video)}
-                disabled={sessionLive}
                 className="bg-blue-600 text-white px-2 rounded text-xs disabled:opacity-50"
               >
                 Vorschlagen
