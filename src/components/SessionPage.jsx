@@ -20,6 +20,14 @@ const SessionPage = () => {
   const [currentSong, setCurrentSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
+  const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
+
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseRemaining, setPauseRemaining] = useState(0);
+  const [pauseTitle, setPauseTitle] = useState("");
+  const pauseTimerRef = useRef(null);
+
   const [isHost, setIsHost] = useState(false);
   const [nickname, setNickname] = useState(
     () => localStorage.getItem("guestName") || "Gast",
@@ -127,6 +135,44 @@ const SessionPage = () => {
         playerRef.current = null;
       }
       loadSessionData(); // Reload to restore UI
+    });
+
+    socketRef.current.on("pause_started", ({ title, duration, startTime }) => {
+      console.log("Pause started:", title, duration);
+      setIsPaused(true);
+      setPauseTitle(title);
+      setPauseRemaining(duration);
+
+      // YouTube-Player pausieren
+      if (playerRef.current) {
+        playerRef.current.pauseVideo();
+      }
+
+      // Timer-Countdown im Frontend starten
+      if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
+      pauseTimerRef.current = setInterval(() => {
+        setPauseRemaining((prev) => {
+          if (prev <= 1) {
+            clearInterval(pauseTimerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    });
+
+    socketRef.current.on("pause_ended", ({ title }) => {
+      console.log("Pause ended:", title);
+      setIsPaused(false);
+      setPauseRemaining(0);
+      setPauseTitle("");
+
+      if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
+
+      // Nach der Pause wieder Musik starten
+      if (playerRef.current) {
+        playerRef.current.playVideo();
+      }
     });
 
     return () => socketRef.current.disconnect();
@@ -403,7 +449,6 @@ const SessionPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-blue-700">
             Session: {session.title}
@@ -501,23 +546,45 @@ const SessionPage = () => {
           )}
         </div>
 
-        {sessionLive && currentSong && isLiveJoined && (
-          <div className="bg-green-100 border-2 border-green-500 p-4 rounded-lg shadow mb-6">
-            <h3 className="font-bold text-green-800 flex items-center gap-2">
-              Jetzt läuft
-            </h3>
-            <div className="flex items-center gap-3 mt-2">
-              <img
-                src={currentSong.thumbnail}
-                alt=""
-                className="w-16 h-16 rounded"
-              />
-              <div>
-                <p className="font-semibold">{currentSong.title}</p>
-                <p className="text-sm text-green-700">Live mit allen</p>
+        {sessionLive && isLiveJoined && (
+          <>
+            {isPaused ? (
+              <div className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded-lg shadow mb-6">
+                <h3 className="font-bold text-yellow-800 flex items-center gap-2">
+                  ⏸ Pause läuft
+                </h3>
+                <p className="mt-2 text-yellow-700">
+                  {pauseTitle || "Pause"} – noch{" "}
+                  <span className="font-semibold">{pauseRemaining}s</span>
+                </p>
+                <div className="w-full bg-yellow-200 h-2 rounded mt-2 overflow-hidden">
+                  <div
+                    className="bg-yellow-500 h-2 transition-all duration-1000"
+                    style={{
+                      width: `${Math.max(0, (pauseRemaining / (pauseRemaining + 1)) * 100)}%`,
+                    }}
+                  ></div>
+                </div>
               </div>
-            </div>
-          </div>
+            ) : currentSong ? (
+              <div className="bg-green-100 border-2 border-green-500 p-4 rounded-lg shadow mb-6">
+                <h3 className="font-bold text-green-800 flex items-center gap-2">
+                  🎵 Jetzt läuft
+                </h3>
+                <div className="flex items-center gap-3 mt-2">
+                  <img
+                    src={currentSong.thumbnail}
+                    alt=""
+                    className="w-16 h-16 rounded"
+                  />
+                  <div>
+                    <p className="font-semibold">{currentSong.title}</p>
+                    <p className="text-sm text-green-700">Live mit allen</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
 
         {isLiveJoined && (
@@ -579,6 +646,49 @@ const SessionPage = () => {
           ))}
         </div>
 
+        <div className="bg-white p-4 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
+          <div className="flex gap-3 items-center">
+            <input
+              type="number"
+              min="5"
+              value={pauseDuration}
+              onChange={(e) => setPauseDuration(Number(e.target.value))}
+              className="border rounded p-2 w-20"
+            />
+            <span className="text-sm text-gray-600">Sekunden</span>
+            <input
+              type="text"
+              value={pauseDescription}
+              onChange={(e) => setPauseDescription(e.target.value)}
+              className="flex-1 border rounded p-2"
+              placeholder="Beschreibung (optional)"
+            />
+            <button
+              onClick={async () => {
+                try {
+                  await axios.post(
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
+                    {
+                      item_type: "pause",
+                      duration: pauseDuration,
+                      description: pauseDescription,
+                    },
+                    { headers: getAuthHeaders() },
+                  );
+                  loadSessionData(); // Queue neu laden
+                } catch (err) {
+                  console.error(err);
+                  alert("Fehler beim Hinzufügen der Pause");
+                }
+              }}
+              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
+            >
+              Pause hinzufügen
+            </button>
+          </div>
+        </div>
+
         <div className="bg-white p-4 rounded-lg shadow">
           <h2 className="text-xl font-semibold mb-3">Queue</h2>
           {queue.length === 0 ? (
@@ -587,13 +697,16 @@ const SessionPage = () => {
             queue.map((item) => {
               const isCurrent =
                 currentSong?.videoId === item.video_id && isLiveJoined;
+
               return (
                 <div
                   key={item.id}
                   className={`flex items-center gap-3 mb-2 p-2 rounded transition-all ${
                     isCurrent
                       ? "bg-green-100 border-2 border-green-500 shadow-md"
-                      : "bg-gray-50"
+                      : item.item_type === "pause"
+                        ? "bg-yellow-50 border-l-4 border-yellow-400"
+                        : "bg-gray-50"
                   }`}
                 >
                   {isCurrent && (
@@ -601,12 +714,18 @@ const SessionPage = () => {
                       LIVE
                     </span>
                   )}
-                  <img
-                    src={item.thumbnail}
-                    alt=""
-                    className="w-12 h-12 rounded"
-                  />
-                  <div className="flex-1 text-sm">{item.title}</div>
+                  {item.item_type === "music" && (
+                    <img
+                      src={item.thumbnail}
+                      alt=""
+                      className="w-12 h-12 rounded"
+                    />
+                  )}
+                  <div className="flex-1 text-sm">
+                    {item.item_type === "pause"
+                      ? `${item.description || "Pause"} - ${item.duration}s`
+                      : item.title}
+                  </div>
                   <span className="text-xs text-gray-500">
                     {item.addedBy || "Gast"}
                   </span>
