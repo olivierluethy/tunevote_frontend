@@ -13,7 +13,7 @@ export default function Login() {
     setError('');
 
     try {
-      const res = await axios.post('http://localhost:4000/login', { email, password });
+      const res = await axios.post('http://api.tunevote.com/login', { email, password });
       const { token, username } = res.data;
 
       // Store JWT and username in localStorage

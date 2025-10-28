@@ -28,7 +28,7 @@ export default function Dashboard() {
   const fetchSessions = async () => {
     if (!token) return;
     try {
-      const res = await axios.get("http://localhost:4000/sessions", {
+      const res = await axios.get("http://api.tunevote.com/sessions", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSessions(res.data);
@@ -44,7 +44,7 @@ export default function Dashboard() {
   const deleteSession = async (sessionId) => {
     try {
       const response = await fetch(
-        `http://localhost:4000/sessions/${sessionId}`,
+        `http://api.tunevote.com/sessions/${sessionId}`,
         {
           method: "DELETE",
           headers: {
@@ -71,7 +71,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "http://localhost:4000/sessions",
+        "http://api.tunevote.com/sessions",
         { title: newSessionTitle },
         { headers: { Authorization: `Bearer ${token}` } },
       );
