@@ -12,7 +12,7 @@ export default function Register() {
     setMessage('');
 
     try {
-      const res = await axios.post('http://api.tunevote.com/register', {
+      const res = await axios.post('https://api.tunevote.com/register', {
         username,
         email,
         password,
