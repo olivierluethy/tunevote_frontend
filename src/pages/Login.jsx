@@ -18,7 +18,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const res = await axios.post("https://tunevote.com/login", { email, password });
+      const res = await axios.post("https://api.tunevote.com/login", { email, password });
       const { token, username } = res.data;
       const payload = JSON.parse(atob(token.split(".")[1]));
 
