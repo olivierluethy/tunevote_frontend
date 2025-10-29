@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 
-const SOCKET_SERVER = "https://tunevote.com/";
+const SOCKET_SERVER = "https://api.tunevote.com/";
 
 export default function SessionLive() {
   const { sessionId } = useParams();
@@ -73,8 +73,8 @@ export default function SessionLive() {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://tunevote.com/sessions/${sessionId}`, { headers: getAuthHeaders() }),
-        axios.get(`https://tunevote.com/sessions/${sessionId}/queue`, { headers: getAuthHeaders() }),
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, { headers: getAuthHeaders() }),
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, { headers: getAuthHeaders() }),
       ]);
       setSession(sessRes.data);
       setQueue(queueRes.data || []);
@@ -199,12 +199,12 @@ export default function SessionLive() {
 
     try {
       await axios.post(
-        `https://tunevote.com/sessions/${sessionId}/join-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
       const { data } = await axios.get(
-        `https://tunevote.com/sessions/${sessionId}/playback-sync`,
+        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
       );
 
       if (data.current_video_id && data.video_start_time) {
@@ -220,7 +220,7 @@ export default function SessionLive() {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://tunevote.com/sessions/${sessionId}/playback-sync`,
+          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
         );
         if (data.current_video_id && data.video_start_time) {
           const elapsed = (Date.now() - data.video_start_time) / 1000;
@@ -245,7 +245,7 @@ export default function SessionLive() {
     }
     try {
       await axios.post(
-        `https://tunevote.com/sessions/${sessionId}/leave-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -260,7 +260,7 @@ export default function SessionLive() {
     if (!isHost) return;
     if (playerRef.current) playerRef.current.destroy();
     try {
-      await axios.post(`https://tunevote.com/sessions/${sessionId}/start`, {}, { headers: getAuthHeaders() });
+      await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`, {}, { headers: getAuthHeaders() });
       loadSessionData();
     } catch (err) {
       alert("Fehler beim Starten");
@@ -278,7 +278,7 @@ export default function SessionLive() {
     }
     try {
       await axios.post(
-        `https://tunevote.com/sessions/${sessionId}/leave-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -320,7 +320,7 @@ export default function SessionLive() {
   const proposeSong = async (video) => {
     try {
       await axios.post(
-        `https://tunevote.com/sessions/${sessionId}/proposals`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
         { videoId: video.id.videoId, title: video.snippet.title, thumbnail: video.snippet.thumbnails.medium.url },
         { headers: getAuthHeaders() }
       );
@@ -335,7 +335,7 @@ export default function SessionLive() {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://tunevote.com/guest/join", { nickname });
+      const res = await axios.post("https://api.tunevote.com/guest/join", { nickname });
       localStorage.setItem("guestToken", res.data.guestToken);
       localStorage.setItem("guestName", nickname);
       setShowGuestModal(false);
@@ -668,7 +668,7 @@ export default function SessionLive() {
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://tunevote.com/sessions/${sessionId}/proposals`,
+                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
                     { item_type: "pause", duration: pauseDuration, description: pauseDescription },
                     { headers: getAuthHeaders() }
                   );
