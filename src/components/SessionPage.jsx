@@ -1,44 +1,63 @@
+// src/pages/SessionLive.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
-import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Search,
+  Plus,
+  Share2,
+  ArrowLeft,
+  Radio,
+  Clock,
+  User,
+  Music,
+  Zap,
+  Timer,
+  Mic,
+  Sparkles,
+  Copy,
+  Check,
+  X,
+} from "lucide-react";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "https://tunevote.com/";
 
-const SessionPage = () => {
+export default function SessionLive() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
 
   const playerRef = useRef(null);
   const socketRef = useRef(null);
   const syncIntervalRef = useRef(null);
+  const pauseTimerRef = useRef(null);
 
   const [session, setSession] = useState(null);
   const [queue, setQueue] = useState([]);
   const [currentSong, setCurrentSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
+  const [pauseDuration, setPauseDuration] = useState(30);
   const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
 
   const [isPaused, setIsPaused] = useState(false);
   const [pauseRemaining, setPauseRemaining] = useState(0);
   const [pauseTitle, setPauseTitle] = useState("");
-  const pauseTimerRef = useRef(null);
 
   const [isHost, setIsHost] = useState(false);
-  const [nickname, setNickname] = useState(
-    () => localStorage.getItem("guestName") || "Gast",
-  );
+  const [nickname, setNickname] = useState(() => localStorage.getItem("guestName") || "Gast");
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [volume, setVolume] = useState(50);
-  const [isMutedForMe, setIsMutedForMe] = useState(
-    () => localStorage.getItem(`mute_${sessionId}`) === "true",
-  );
+  const [isMutedForMe, setIsMutedForMe] = useState(() => localStorage.getItem(`mute_${sessionId}`) === "true");
   const [isLiveJoined, setIsLiveJoined] = useState(false);
   const [sessionLive, setSessionLive] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const token = localStorage.getItem("token");
   const guestToken = localStorage.getItem("guestToken");
@@ -46,9 +65,6 @@ const SessionPage = () => {
 
   const getAuthHeaders = () => {
     const headers = {};
-    const token = localStorage.getItem("token");
-    const guestToken = localStorage.getItem("guestToken");
-
     if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
     else if (guestToken && !token) headers["x-guest-token"] = guestToken;
     return headers;
@@ -57,22 +73,15 @@ const SessionPage = () => {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
-          headers: getAuthHeaders(),
-        }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
-          headers: getAuthHeaders(),
-        }),
+        axios.get(`https://tunevote.com//sessions/${sessionId}`, { headers: getAuthHeaders() }),
+        axios.get(`https://tunevote.com//sessions/${sessionId}/queue`, { headers: getAuthHeaders() }),
       ]);
-
       setSession(sessRes.data);
       setQueue(queueRes.data || []);
       setIsHost(sessRes.data.hostId === Number(userId));
       setSessionLive(!!sessRes.data.is_live);
     } catch (err) {
-      console.error(err);
-      if (err.response?.status === 401 || err.response?.status === 403)
-        setShowGuestModal(true);
+      if (err.response?.status === 401 || err.response?.status === 403) setShowGuestModal(true);
       else if (err.response?.status === 404) navigate("/dashboard");
     }
   }, [sessionId, userId, navigate]);
@@ -87,7 +96,7 @@ const SessionPage = () => {
     }
   }, [loadSessionData, token, guestToken]);
 
-  // === Socket.IO ===
+  // Socket.IO
   useEffect(() => {
     if (!token && !guestToken) return;
 
@@ -96,117 +105,61 @@ const SessionPage = () => {
       auth: token ? { token } : { guestToken },
     });
 
-    socketRef.current.on("connect_error", (err) =>
-      console.warn("Socket error", err),
-    );
     socketRef.current.on("queue_updated", loadSessionData);
     socketRef.current.on("session_started", (data) => {
-      console.log("Session started broadcast:", data);
       loadSessionData();
       setSessionLive(true);
       if (isLiveJoined && data.firstVideoId) {
-        syncPlayback({
-          current_video_id: data.firstVideoId,
-          video_start_time: data.video_start_time,
-          is_playing: true,
-        });
-      }
-      if (isHost && playerRef.current) {
-        playerRef.current.stopVideo();
-        playerRef.current.destroy();
-        playerRef.current = null;
+        syncPlayback({ current_video_id: data.firstVideoId, video_start_time: data.video_start_time, is_playing: true });
       }
     });
 
-    socketRef.current.on("playback_sync", (data) => {
-      if (!isLiveJoined) return;
-      syncPlayback(data);
-    });
+    socketRef.current.on("playback_sync", (data) => isLiveJoined && syncPlayback(data));
 
-    socketRef.current.on("session_ended", ({ message }) => {
-      alert(message);
+    socketRef.current.on("session_ended", () => {
       setIsLiveJoined(false);
       setCurrentSong(null);
       setSessionLive(false);
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-      if (playerRef.current) {
-        playerRef.current.stopVideo();
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
-      loadSessionData(); // Reload to restore UI
+      if (playerRef.current) playerRef.current.destroy();
+      loadSessionData();
     });
 
-    socketRef.current.on("pause_started", ({ title, duration, startTime }) => {
-      console.log("Pause started:", title, duration);
+    socketRef.current.on("pause_started", ({ title, duration }) => {
       setIsPaused(true);
       setPauseTitle(title);
       setPauseRemaining(duration);
+      playerRef.current?.pauseVideo();
 
-      // YouTube-Player pausieren
-      if (playerRef.current) {
-        playerRef.current.pauseVideo();
-      }
-
-      // Timer-Countdown im Frontend starten
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
       pauseTimerRef.current = setInterval(() => {
-        setPauseRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(pauseTimerRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
+        setPauseRemaining((prev) => (prev <= 1 ? (clearInterval(pauseTimerRef.current), 0) : prev - 1));
       }, 1000);
     });
 
-    socketRef.current.on("pause_ended", ({ title }) => {
-      console.log("Pause ended:", title);
+    socketRef.current.on("pause_ended", () => {
       setIsPaused(false);
       setPauseRemaining(0);
       setPauseTitle("");
-
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
-
-      // Nach der Pause wieder Musik starten
-      if (playerRef.current) {
-        playerRef.current.playVideo();
-      }
+      playerRef.current?.playVideo();
     });
 
     return () => socketRef.current.disconnect();
-  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined, isHost]);
+  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined]);
 
-  // === YouTube Player API laden ===
+  // YouTube API
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
     document.body.appendChild(script);
-
-    window.onYouTubeIframeAPIReady = () => {
-      console.log("YouTube API ready");
-    };
-
-    return () => {
-      if (playerRef.current) playerRef.current.destroy();
-    };
+    window.onYouTubeIframeAPIReady = () => {};
+    return () => playerRef.current?.destroy();
   }, []);
 
-  // === Player erstellen (für alle Clients) ===
   const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
-    console.log(
-      `[createPlayer] Lade Song: videoId=${videoId}, Startzeit=${startSeconds}s, Autoplay=${shouldPlay}`,
-    );
-
     if (playerRef.current) {
       playerRef.current.loadVideoById({ videoId, startSeconds });
-      if (shouldPlay) {
-        playerRef.current.playVideo();
-        console.log(
-          `[createPlayer] Bestehender Player spielt Song ab: videoId=${videoId}`,
-        );
-      }
+      if (shouldPlay) playerRef.current.playVideo();
       return;
     }
 
@@ -214,50 +167,29 @@ const SessionPage = () => {
       height: 0,
       width: 0,
       videoId,
-      playerVars: {
-        start: Math.floor(startSeconds),
-        autoplay: shouldPlay ? 1 : 0,
-        controls: 0,
-        modestbranding: 1,
-        rel: 0,
-        fs: 0,
-      },
+      playerVars: { start: Math.floor(startSeconds), autoplay: shouldPlay ? 1 : 0, controls: 0, modestbranding: 1 },
       events: {
         onReady: () => {
           playerRef.current.seekTo(startSeconds, true);
-          if (shouldPlay) {
-            playerRef.current.playVideo();
-            console.log(
-              `[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`,
-            );
-          }
+          if (shouldPlay) playerRef.current.playVideo();
           playerRef.current.setVolume(isMutedForMe ? 0 : volume);
         },
       },
     });
   };
 
-  // === Sync Playback ===
   const syncPlayback = ({ current_video_id, video_start_time, is_playing }) => {
     if (!current_video_id || !video_start_time) return;
-
-    const elapsed = (Date.now() - video_start_time) / 1000;
-    const progress = Math.max(0, elapsed);
+    const elapsed = Math.max(0, (Date.now() - video_start_time) / 1000);
+    const song = queue.find((i) => i.video_id === current_video_id);
 
     setCurrentSong({
       videoId: current_video_id,
-      title:
-        queue.find((i) => i.video_id === current_video_id)?.title ||
-        "Unbekannt",
-      thumbnail:
-        queue.find((i) => i.video_id === current_video_id)?.thumbnail || "",
+      title: song?.title || "Unbekannt",
+      thumbnail: song?.thumbnail || "",
     });
 
-    console.log(
-      `[Playback] Neuer Song wird abgespielt: videoId=${current_video_id}, Titel=${queue.find((i) => i.video_id === current_video_id)?.title || "Unbekannt"}`,
-    );
-
-    createPlayer(current_video_id, progress, is_playing);
+    createPlayer(current_video_id, elapsed, is_playing);
   };
 
   // === Join Live ===
@@ -267,12 +199,12 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
+        `https://tunevote.com//sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
       const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+        `https://tunevote.com//sessions/${sessionId}/playback-sync`,
       );
 
       if (data.current_video_id && data.video_start_time) {
@@ -288,7 +220,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          `https://tunevote.com//sessions/${sessionId}/playback-sync`,
         );
         if (data.current_video_id && data.video_start_time) {
           const elapsed = (Date.now() - data.video_start_time) / 1000;
@@ -313,7 +245,7 @@ const SessionPage = () => {
     }
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `https://tunevote.com//sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -324,30 +256,40 @@ const SessionPage = () => {
     }
   };
 
-  // === Start Session (Host) ===
   const startSession = async () => {
     if (!isHost) return;
-
-    if (playerRef.current) {
-      playerRef.current.stopVideo();
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-
+    if (playerRef.current) playerRef.current.destroy();
     try {
-      await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
-        {},
-        { headers: getAuthHeaders() },
-      );
+      await axios.post(`https://tunevote.com//sessions/${sessionId}/start`, {}, { headers: getAuthHeaders() });
       loadSessionData();
     } catch (err) {
-      console.error("Start session failed", err);
-      alert("Fehler beim Starten der Session");
+      alert("Fehler beim Starten");
     }
   };
 
-  // === Volume & Mute ===
+  const goBack = async () =>{
+    setIsLiveJoined(false);
+    setCurrentSong(null); // Clear current song to hide "Now Playing" section
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    if (playerRef.current) {
+      playerRef.current.pauseVideo();
+      playerRef.current.destroy();
+      playerRef.current = null;
+    }
+    try {
+      await axios.post(
+        `https://tunevote.com//sessions/${sessionId}/leave-live`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+      await loadSessionData(); // Reload to restore UI state
+    } catch (err) {
+      console.error("Leave failed", err);
+      await loadSessionData(); // Reload even on error to ensure UI consistency
+    }
+    navigate("/dashboard")
+  }
+
   const handleVolumeChange = (e) => {
     const vol = parseInt(e.target.value);
     setVolume(vol);
@@ -361,25 +303,14 @@ const SessionPage = () => {
     playerRef.current?.setVolume(next ? 0 : volume);
   };
 
-  // === Suche & Vorschlag ===
   const searchYouTube = async () => {
     if (!searchQuery.trim()) return;
     const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
     if (!API_KEY) return;
-
     try {
-      const res = await axios.get(
-        "https://www.googleapis.com/youtube/v3/search",
-        {
-          params: {
-            part: "snippet",
-            type: "video",
-            maxResults: 5,
-            q: searchQuery,
-            key: API_KEY,
-          },
-        },
-      );
+      const res = await axios.get("https://www.googleapis.com/youtube/v3/search", {
+        params: { part: "snippet", type: "video", maxResults: 5, q: searchQuery, key: API_KEY },
+      });
       setSearchResults(res.data.items);
     } catch (err) {
       console.error(err);
@@ -389,13 +320,9 @@ const SessionPage = () => {
   const proposeSong = async (video) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
-        {
-          videoId: video.id.videoId,
-          title: video.snippet.title,
-          thumbnail: video.snippet.thumbnails.medium.url,
-        },
-        { headers: getAuthHeaders() },
+        `https://tunevote.com//sessions/${sessionId}/proposals`,
+        { videoId: video.id.videoId, title: video.snippet.title, thumbnail: video.snippet.thumbnails.medium.url },
+        { headers: getAuthHeaders() }
       );
       setSearchResults([]);
       setSearchQuery("");
@@ -408,9 +335,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
-        nickname,
-      });
+      const res = await axios.post("https://tunevote.com//guest/join", { nickname });
       localStorage.setItem("guestToken", res.data.guestToken);
       localStorage.setItem("guestName", nickname);
       setShowGuestModal(false);
@@ -420,330 +345,407 @@ const SessionPage = () => {
     }
   };
 
+  const shareLink = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: session.title, url });
+      } catch {}
+    } else {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   if (showGuestModal) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-          <h2 className="text-2xl font-bold text-blue-700 mb-4">Willkommen!</h2>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 max-w-md w-full border border-white/20 shadow-2xl"
+        >
+          <div className="text-center mb-8">
+            <Mic className="w-16 h-16 mx-auto mb-4 text-purple-400" />
+            <h2 className="text-3xl font-bold text-white mb-2">Willkommen!</h2>
+            <p className="text-gray-300">Gib deinen Namen ein, um beizutreten</p>
+          </div>
           <input
             type="text"
-            placeholder="Name"
-            className="w-full border rounded-lg p-3 mb-4"
+            placeholder="Dein Name"
+            className="w-full px-5 py-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && handleGuestJoin()}
           />
           <button
             onClick={handleGuestJoin}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg"
+            className="mt-6 w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center justify-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all"
           >
-            Beitreten
+            <Sparkles className="w-5 h-5" />
+            <span>Beitreten</span>
           </button>
-        </div>
+        </motion.div>
       </div>
     );
   }
 
-  if (!session) return <div>Lade…</div>;
+  if (!session) return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+      <div className="text-white text-2xl">Lade Session...</div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-blue-700">
-            Session: {session.title}
-          </h1>
-          <div className="flex items-center gap-4">
-            {sessionLive ? (
-              <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
-                Live
-              </div>
-            ) : (
-              <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
-                Warte auf Host
-              </div>
-            )}
-            {isHost && !sessionLive && (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white overflow-x-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 opacity-20">
+        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-600 rounded-full filter blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-pink-600 rounded-full filter blur-3xl animate-pulse animation-delay-2000"></div>
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8">
+        {/* Header */}
+        <motion.div
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="backdrop-blur-xl bg-black/30 rounded-3xl p-6 mb-8 border border-white/10"
+        >
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                {session.title}
+              </h1>
+              <p className="text-gray-300 mt-1 flex items-center gap-2">
+                <User className="w-4 h-4" />
+                {nickname} {isHost && <span className="text-purple-400">(Host)</span>}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {sessionLive ? (
+                <div className="px-4 py-2 bg-green-600/20 border border-green-500/50 rounded-full flex items-center gap-2">
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"></div>
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+                  <span className="font-bold">LIVE</span>
+                </div>
+              ) : (
+                <div className="px-4 py-2 bg-yellow-600/20 border border-yellow-500/50 rounded-full flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  <span>Warte auf Host</span>
+                </div>
+              )}
+              {isHost && !sessionLive && (
+                <button
+                  onClick={startSession}
+                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold flex items-center gap-2 hover:shadow-2xl hover:shadow-purple-500/50 transition-all"
+                >
+                  <Zap className="w-5 h-5" />
+                  Session starten
+                </button>
+              )}
               <button
-                onClick={startSession}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
+                onClick={goBack}
+                className="p-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 transition-all"
               >
-                Start Session
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Share & Join */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6 mb-8 border border-white/20"
+        >
+          <div className="flex flex-col md:flex-row items-center justify-center gap-6">
+            <div className="p-4 bg-white/10 rounded-2xl border border-white/20">
+              <QRCodeCanvas value={window.location.href} size={100} />
+            </div>
+            <button
+              onClick={shareLink}
+              className="group flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold hover:shadow-2xl hover:shadow-purple-500/50 transition-all"
+            >
+              {copied ? <Check className="w-5 h-5" /> : <Share2 className="w-5 h-5 group-hover:scale-110 transition-transform" />}
+              <span>{copied ? "Kopiert!" : "Link teilen"}</span>
+            </button>
+            {sessionLive && (
+              <button
+                onClick={isLiveJoined ? leaveLive : joinLive}
+                className={`px-8 py-3 rounded-2xl font-bold flex items-center gap-3 transition-all ${
+                  isLiveJoined
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-green-600 hover:bg-green-700"
+                }`}
+              >
+                {isLiveJoined ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                <span>{isLiveJoined ? "Verlassen" : "Live beitreten"}</span>
               </button>
             )}
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="text-gray-600"
-            >
-              ← Zurück
-            </button>
-            {!isHost && (
-              <div className="text-sm text-gray-500">Gast: {nickname}</div>
-            )}
           </div>
-        </div>
+        </motion.div>
 
-        <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <QRCodeCanvas value={window.location.href} size={100} />
-          <button
-            onClick={async () => {
-              const url = window.location.href;
-              const title = document.title || "Schau dir das an!";
-              const text = "Hier ist ein interessanter Link:";
-
-              if (navigator.share) {
-                try {
-                  await navigator.share({
-                    title,
-                    text,
-                    url,
-                  });
-                  console.log("Link erfolgreich geteilt!");
-                } catch (err) {
-                  console.error("Teilen abgebrochen oder fehlgeschlagen:", err);
-                }
-              } else {
-                // Fallback: Link kopieren
-                await navigator.clipboard.writeText(url);
-                alert("Link kopiert!");
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-lg shadow-md hover:from-blue-700 hover:to-indigo-700 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-5 h-5"
-            >
-              <circle cx="18" cy="5" r="3" />
-              <circle cx="6" cy="12" r="3" />
-              <circle cx="18" cy="19" r="3" />
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-              <line x1="8.59" y1="10.49" x2="15.42" y2="6.51" />
-            </svg>
-            Link teilen
-          </button>
-
-          {sessionLive && (
-            <button
-              onClick={isLiveJoined ? leaveLive : joinLive}
-              className={`px-4 py-2 rounded flex items-center gap-2 ${
-                isLiveJoined
-                  ? "bg-red-600 hover:bg-red-700 text-white"
-                  : "bg-green-600 hover:bg-green-700 text-white"
-              }`}
-            >
-              {isLiveJoined ? <FaPause /> : <FaPlay />}
-              {isLiveJoined ? "Leave Live" : "Join Live"}
-            </button>
-          )}
-        </div>
-
-        {sessionLive && isLiveJoined && (
-          <>
-            {isPaused ? (
-              <div className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded-lg shadow mb-6">
-                <h3 className="font-bold text-yellow-800 flex items-center gap-2">
-                  ⏸ Pause läuft
-                </h3>
-                <p className="mt-2 text-yellow-700">
-                  {pauseTitle || "Pause"} – noch{" "}
-                  <span className="font-semibold">{pauseRemaining}s</span>
-                </p>
-                <div className="w-full bg-yellow-200 h-2 rounded mt-2 overflow-hidden">
-                  <div
-                    className="bg-yellow-500 h-2 transition-all duration-1000"
-                    style={{
-                      width: `${Math.max(0, (pauseRemaining / (pauseRemaining + 1)) * 100)}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-            ) : currentSong ? (
-              <div className="bg-green-100 border-2 border-green-500 p-4 rounded-lg shadow mb-6">
-                <h3 className="font-bold text-green-800 flex items-center gap-2">
-                  🎵 Jetzt läuft
-                </h3>
-                <div className="flex items-center gap-3 mt-2">
-                  <img
-                    src={currentSong.thumbnail}
-                    alt=""
-                    className="w-16 h-16 rounded"
-                  />
-                  <div>
-                    <p className="font-semibold">{currentSong.title}</p>
-                    <p className="text-sm text-green-700">Live mit allen</p>
+        {/* Live Status */}
+        <AnimatePresence>
+          {sessionLive && isLiveJoined && (
+            <>
+              {isPaused ? (
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  className="backdrop-blur-2xl bg-yellow-600/20 rounded-3xl p-6 mb-8 border border-yellow-500/50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <Timer className="w-8 h-8 text-yellow-400" />
+                      <div>
+                        <h3 className="text-xl font-bold">{pauseTitle || "Pause"}</h3>
+                        <p className="text-3xl font-bold">{pauseRemaining}s</p>
+                      </div>
+                    </div>
+                    <svg className="w-32 h-32">
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="rgba(255,255,255,0.2)"
+                        strokeWidth="12"
+                        fill="none"
+                      />
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#fbbf24"
+                        strokeWidth="12"
+                        fill="none"
+                        strokeDasharray={`${(pauseRemaining / pauseDuration) * 352} 352`}
+                        className="transition-all duration-1000"
+                        transform="rotate(-90 64 64)"
+                      />
+                    </svg>
                   </div>
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
+                </motion.div>
+              ) : currentSong ? (
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  className="backdrop-blur-2xl bg-green-600/20 rounded-3xl p-6 mb-8 border border-green-500/50"
+                >
+                  <div className="flex items-center gap-6">
+                    <img src={currentSong.thumbnail} alt="" className="w-24 h-24 rounded-2xl shadow-2xl" />
+                    <div className="flex-1">
+                      <h3 className="text-2xl font-bold flex items-center gap-2">
+                        <Music className="w-6 h-6 text-green-400" />
+                        Jetzt läuft
+                      </h3>
+                      <p className="text-xl mt-1">{currentSong.title}</p>
+                      <p className="text-sm text-gray-300 mt-2">Live mit allen Teilnehmern</p>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : null}
+            </>
+          )}
+        </AnimatePresence>
 
+        {/* Volume */}
         {isLiveJoined && (
-          <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-wrap items-center gap-3">
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume}
-              onChange={handleVolumeChange}
-              className="flex-1 min-w-[150px]"
-            />
-            <span className="text-sm">{volume}%</span>
-            <button
-              onClick={togglePersonalMute}
-              className={`px-3 py-1 rounded flex items-center gap-1 ${isMutedForMe ? "bg-red-600 text-white" : "bg-gray-200"}`}
-            >
-              {isMutedForMe ? <FaVolumeMute /> : <FaVolumeUp />}
-              {isMutedForMe ? "Stumm" : "Ton"}
-            </button>
-          </div>
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6 mb-8 border border-white/20"
+          >
+            <div className="flex items-center gap-4">
+              <button
+                onClick={togglePersonalMute}
+                className={`p-3 rounded-xl transition-all ${isMutedForMe ? "bg-red-600" : "bg-white/20"}`}
+              >
+                {isMutedForMe ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={handleVolumeChange}
+                className="flex-1 h-2 bg-white/20 rounded-full appearance-none cursor-pointer slider"
+                style={{
+                  background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${volume}%, rgba(255,255,255,0.2) ${volume}%, rgba(255,255,255,0.2) 100%)`,
+                }}
+              />
+              <span className="w-12 text-right font-mono">{volume}%</span>
+            </div>
+          </motion.div>
         )}
 
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">YouTube Suche</h2>
-          <div className="flex gap-3 mb-3">
+        {/* Search */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6 mb-8 border border-white/20"
+        >
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Search className="w-5 h-5" />
+            YouTube Suche
+          </h2>
+          <div className="flex gap-3 mb-4">
             <input
               type="text"
-              placeholder="Suchen"
-              className="flex-1 border rounded p-2"
+              placeholder="Song suchen..."
+              className="flex-1 px-5 py-3 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && searchYouTube()}
             />
             <button
               onClick={searchYouTube}
-              className="bg-green-600 text-white px-4 rounded"
+              className="px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold hover:shadow-lg hover:shadow-purple-500/50 transition-all"
             >
               Suchen
             </button>
           </div>
-          {searchResults.map((video) => (
-            <div
-              key={video.id.videoId}
-              className="flex items-center gap-3 mb-2 p-2 bg-gray-50 rounded"
-            >
-              <img
-                src={video.snippet.thumbnails.default.url}
-                alt=""
-                className="w-12 h-12 rounded"
-              />
-              <div className="flex-1 text-sm">{video.snippet.title}</div>
-              <button
-                onClick={() => proposeSong(video)}
-                className="bg-blue-600 text-white px-2 rounded text-xs disabled:opacity-50"
+          <AnimatePresence>
+            {searchResults.map((video, i) => (
+              <motion.div
+                key={video.id.videoId}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ delay: i * 0.05 }}
+                className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-all group"
               >
-                Vorschlagen
-              </button>
-            </div>
-          ))}
-        </div>
+                <img src={video.snippet.thumbnails.default.url} alt="" className="w-16 h-16 rounded-xl" />
+                <div className="flex-1">
+                  <p className="font-medium group-hover:text-purple-300 transition-colors">{video.snippet.title}</p>
+                </div>
+                <button
+                  onClick={() => proposeSong(video)}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 font-medium text-sm transition-all"
+                >
+                  Vorschlagen
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
 
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
-          <div className="flex gap-3 items-center">
+        {/* Add Pause */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6 mb-8 border border-white/20"
+        >
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Timer className="w-5 h-5" />
+            Pause hinzufügen
+          </h2>
+          <div className="flex flex-wrap gap-3 items-center">
             <input
               type="number"
               min="5"
               value={pauseDuration}
               onChange={(e) => setPauseDuration(Number(e.target.value))}
-              className="border rounded p-2 w-20"
+              className="w-24 px-4 py-3 rounded-2xl bg-white/10 border border-white/20 focus:border-purple-400 focus:outline-none transition-all"
             />
-            <span className="text-sm text-gray-600">Sekunden</span>
+            <span className="text-gray-300">Sekunden</span>
             <input
               type="text"
               value={pauseDescription}
               onChange={(e) => setPauseDescription(e.target.value)}
-              className="flex-1 border rounded p-2"
-              placeholder="Beschreibung (optional)"
+              placeholder="z.B. Getränke holen"
+              className="flex-1 min-w-[200px] px-5 py-3 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all"
             />
             <button
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
-                    {
-                      item_type: "pause",
-                      duration: pauseDuration,
-                      description: pauseDescription,
-                    },
-                    { headers: getAuthHeaders() },
+                    `https://tunevote.com//sessions/${sessionId}/proposals`,
+                    { item_type: "pause", duration: pauseDuration, description: pauseDescription },
+                    { headers: getAuthHeaders() }
                   );
-                  loadSessionData(); // Queue neu laden
+                  loadSessionData();
+                  setPauseDescription("Kurze Pause");
                 } catch (err) {
-                  console.error(err);
-                  alert("Fehler beim Hinzufügen der Pause");
+                  alert("Fehler");
                 }
               }}
-              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
+              className="px-6 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-black font-bold transition-all"
             >
-              Pause hinzufügen
+              Hinzufügen
             </button>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-3">Queue</h2>
+        {/* Queue */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6 border border-white/20"
+        >
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Radio className="w-5 h-5" />
+            Warteschlange
+          </h2>
           {queue.length === 0 ? (
-            <p className="text-gray-500">Leer</p>
+            <p className="text-center text-gray-400 py-8">Noch leer – schlage Songs vor!</p>
           ) : (
-            queue.map((item) => {
-              const isCurrent =
-                currentSong?.videoId === item.video_id && isLiveJoined;
-
-              return (
-                <div
-                  key={item.id}
-                  className={`flex items-center gap-3 mb-2 p-2 rounded transition-all ${
-                    isCurrent
-                      ? "bg-green-100 border-2 border-green-500 shadow-md"
-                      : item.item_type === "pause"
-                        ? "bg-yellow-50 border-l-4 border-yellow-400"
-                        : "bg-gray-50"
-                  }`}
-                >
-                  {isCurrent && (
-                    <span className="text-green-600 font-bold animate-pulse">
-                      LIVE
-                    </span>
-                  )}
-                  {item.item_type === "music" && (
-                    <img
-                      src={item.thumbnail}
-                      alt=""
-                      className="w-12 h-12 rounded"
-                    />
-                  )}
-                  <div className="flex-1 text-sm">
-                    {item.item_type === "pause"
-                      ? `${item.description || "Pause"} - ${item.duration}s`
-                      : item.title}
-                  </div>
-                  <span className="text-xs text-gray-500">
-                    {item.addedBy || "Gast"}
-                  </span>
-                </div>
-              );
-            })
+            <div className="space-y-3">
+              {queue.map((item, i) => {
+                const isCurrent = currentSong?.videoId === item.video_id && isLiveJoined;
+                return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className={`flex items-center gap-4 p-4 rounded-2xl transition-all ${
+                      isCurrent
+                        ? "bg-green-600/20 border-2 border-green-500 shadow-lg shadow-green-500/20"
+                        : item.item_type === "pause"
+                        ? "bg-yellow-600/10 border-l-4 border-yellow-500"
+                        : "bg-white/5 hover:bg-white/10"
+                    }`}
+                  >
+                    {isCurrent && (
+                      <div className="flex items-center gap-2 text-green-400 font-bold animate-pulse">
+                        <div className="relative">
+                          <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"></div>
+                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                        </div>
+                        LIVE
+                      </div>
+                    )}
+                    {item.item_type === "music" && (
+                      <img src={item.thumbnail} alt="" className="w-12 h-12 rounded-xl" />
+                    )}
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {item.item_type === "pause"
+                          ? `${item.description || "Pause"} – ${item.duration}s`
+                          : item.title}
+                      </p>
+                      <p className="text-sm text-gray-400">von {item.addedBy || "Gast"}</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
           )}
-        </div>
-
-        {isLiveJoined && (
-          <div
-            id="youtube-player"
-            style={{ width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
-          ></div>
-        )}
+        </motion.div>
       </div>
+
+      {isLiveJoined && <div id="youtube-player" className="hidden"></div>}
     </div>
   );
-};
-
-export default SessionPage;
+}

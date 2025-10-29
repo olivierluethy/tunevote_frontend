@@ -6,18 +6,32 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SessionPage from './components/SessionPage';
+import Home from './pages/Home'; // ✅ Home-Seite importieren
 
+// ✅ Authentifizierungs-Wrapper
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem('token');
   return token ? children : <Navigate to="/login" replace />;
+};
+
+// ✅ Home-Komponente mit Weiterleitung, falls eingeloggt
+const HomeRedirect = () => {
+  const token = localStorage.getItem('token');
+  return token ? <Navigate to="/dashboard" replace /> : <Home />;
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
+        {/* 🏠 Home */}
+        <Route path="/" element={<HomeRedirect />} />
+
+        {/* 🔐 Auth */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+
+        {/* 📊 Geschützte Seite */}
         <Route
           path="/dashboard"
           element={
@@ -26,7 +40,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             </RequireAuth>
           }
         />
+
+        {/* 🎧 Session */}
         <Route path="/session/:sessionId" element={<SessionPage />} />
+
+        {/* ❓ Fallback: Unbekannte Route → Home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

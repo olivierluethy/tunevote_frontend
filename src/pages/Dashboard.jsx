@@ -1,68 +1,55 @@
+// src/pages/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Plus,
+  LogOut,
+  Copy,
+  Trash2,
+  Users,
+  Radio,
+  Clock,
+  Music,
+  Link2,
+  Sparkles,
+  AlertCircle,
+} from "lucide-react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const username = localStorage.getItem("username");
-  const userId = localStorage.getItem("userId"); // Benutzer-ID aus localStorage
+  const userId = localStorage.getItem("userId");
+  const token = localStorage.getItem("token");
 
   const [sessions, setSessions] = useState([]);
   const [newSessionTitle, setNewSessionTitle] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const token = localStorage.getItem("token");
+  const [copiedId, setCopiedId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(null);
 
   useEffect(() => {
     if (token) fetchSessions();
   }, [token]);
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
-    localStorage.removeItem("userId");
+    localStorage.clear();
     navigate("/login");
   };
 
   const fetchSessions = async () => {
     if (!token) return;
     try {
-      const res = await axios.get("https://api.tunevote.com/sessions", {
+      const res = await axios.get("https://tunevote.com//sessions", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSessions(res.data);
     } catch (err) {
       if (err.response?.status === 401) {
         handleLogout();
-      } else {
-        console.error("Fehler beim Laden der Sessions:", err);
       }
-    }
-  };
-
-  const deleteSession = async (sessionId) => {
-    try {
-      const response = await fetch(
-        `https://api.tunevote.com/sessions/${sessionId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Fehler beim Löschen der Session");
-      }
-
-      // Session aus der Liste entfernen
-      setSessions(sessions.filter((s) => s.id !== sessionId));
-      //alert('Session erfolgreich gelöscht!');
-    } catch (err) {
-      console.error("Fehler beim Löschen der Session:", err);
-      alert("Fehler beim Löschen der Session.");
     }
   };
 
@@ -71,28 +58,40 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://api.tunevote.com/sessions",
+        "https://tunevote.com//sessions",
         { title: newSessionTitle },
-        { headers: { Authorization: `Bearer ${token}` } },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       setSessions((prev) => [res.data, ...prev]);
       setNewSessionTitle("");
     } catch (err) {
-      console.error(err);
       alert("Fehler beim Erstellen der Session");
     } finally {
       setLoading(false);
     }
   };
 
-  const openSession = (session) => {
-    navigate(`/session/${session.id}`);
+  const deleteSession = async (sessionId) => {
+    try {
+      await axios.delete(`https://tunevote.com//sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      setShowDeleteModal(null);
+    } catch (err) {
+      alert("Fehler beim Löschen");
+    }
   };
 
   const copyJoinLink = (sessionId) => {
     const link = `${window.location.origin}/session/${sessionId}`;
     navigator.clipboard.writeText(link);
-    alert("Link kopiert!");
+    setCopiedId(sessionId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const openSession = (session) => {
+    navigate(`/session/${session.id}`);
   };
 
   if (!token) {
@@ -101,136 +100,237 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
-      <header className="bg-white shadow-md p-6 mb-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-blue-700">
-            Welcome, {username}!
-          </h1>
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white overflow-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 opacity-30">
+        <div className="absolute top-0 -left-4 w-96 h-96 bg-purple-600 rounded-full filter blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 -right-4 w-96 h-96 bg-pink-600 rounded-full filter blur-3xl animate-pulse animation-delay-2000"></div>
+      </div>
+
+      {/* Header */}
+      <motion.header
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="relative z-10 backdrop-blur-xl bg-black/30 border-b border-white/10"
+      >
+        <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <Music className="w-8 h-8 text-purple-400" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Welcome back, <span className="text-white">{username}</span>!
+            </h1>
+          </div>
           <button
             onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+            className="group flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-red-600/20 border border-red-500/50 hover:bg-red-600/30 transition-all duration-300"
           >
-            Logout
+            <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <span className="font-medium">Logout</span>
           </button>
         </div>
-      </header>
+      </motion.header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Session erstellen */}
-        <section className="mb-10 bg-white p-6 rounded-lg shadow">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Neue Session erstellen
-          </h2>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              placeholder="z.B. Chill Abend"
-              className="flex-1 border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
-              value={newSessionTitle}
-              onChange={(e) => setNewSessionTitle(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && createSession()}
-              disabled={loading}
-            />
-            <button
-              onClick={createSession}
-              disabled={loading || !newSessionTitle.trim()}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-6 rounded-lg transition"
-            >
-              {loading ? "..." : "Erstellen"}
-            </button>
+      <main className="relative z-10 max-w-7xl mx-auto px-6 py-10">
+        {/* Create Session Card - Floating */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="mb-12"
+        >
+          <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
+                <Plus className="w-6 h-6" />
+              </div>
+              <h2 className="text-2xl font-bold">Neue Session starten</h2>
+            </div>
+
+            <div className="flex gap-4">
+              <input
+                type="text"
+                placeholder="z.B. Summer Vibes 2025"
+                className="flex-1 px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
+                value={newSessionTitle}
+                onChange={(e) => setNewSessionTitle(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && createSession()}
+                disabled={loading}
+              />
+              <button
+                onClick={createSession}
+                disabled={loading || !newSessionTitle.trim()}
+                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
+              </button>
+            </div>
           </div>
-        </section>
+        </motion.div>
 
-        {/* Sessions Liste */}
-        <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-            Aktive Sessions
+        {/* Sessions Grid */}
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-3xl font-bold flex items-center space-x-3">
+            <Radio className="w-8 h-8 text-purple-400" />
+            <span>Aktive Sessions</span>
           </h2>
-          {sessions.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              Noch keine aktiven Sessions. Erstelle eine!
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sessions.map((s) => (
-                <div
+          <p className="text-gray-400">{sessions.length} Session{sessions.length !== 1 ? "s" : ""}</p>
+        </div>
+
+        {sessions.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-20"
+          >
+            <div className="w-32 h-32 mx-auto mb-6 rounded-full bg-white/5 backdrop-blur flex items-center justify-center">
+              <Music className="w-16 h-16 text-gray-500" />
+            </div>
+            <p className="text-xl text-gray-400">Noch keine Sessions</p>
+            <p className="text-gray-500">Erstelle deine erste Session oben!</p>
+          </motion.div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <AnimatePresence>
+              {sessions.map((s, i) => (
+                <motion.div
                   key={s.id}
-                  className="bg-white p-5 rounded-lg shadow hover:shadow-xl transition cursor-pointer border border-gray-100"
+                  layout
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -20 }}
+                  transition={{ delay: i * 0.05 }}
+                  whileHover={{ y: -8 }}
+                  className="group relative backdrop-blur-2xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer"
                   onClick={() => openSession(s)}
                 >
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">
+                  {/* Live Indicator */}
+                  {s.is_live && (
+                    <div className="absolute -top-3 -right-3 flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-75"></div>
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
+                      </div>
+                      <span>LIVE</span>
+                    </div>
+                  )}
+
+                  <h3 className="text-xl font-bold mb-2 group-hover:text-purple-300 transition-colors">
                     {s.title}
                   </h3>
-                  <p className="text-sm text-gray-600 mb-2">Host: {s.host}</p>
-                  <p className="text-sm text-gray-600 mb-2">
-                    Teilnehmer: {s.participant_count}
-                  </p>
 
-                  {/* Live-Badge hier */}
-                  <p className="flex items-center gap-2">
-                    {s.is_live ? (
-                      <span className="flex items-center gap-2">
-                        <span className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
-                        </span>
-                        <span className="text-red-600 font-bold text-sm animate-pulse">
-                          LIVE
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 text-sm">Offline</span>
-                    )}
-                  </p>
+                  <div className="space-y-2 text-sm text-gray-300">
+                    <p className="flex items-center space-x-2">
+                      <Users className="w-4 h-4" />
+                      <span>{s.participant_count} Teilnehmer</span>
+                    </p>
+                    <p className="flex items-center space-x-2">
+                      <Clock className="w-4 h-4" />
+                      <span>{new Date(s.created_at).toLocaleDateString()} um {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </p>
+                  </div>
 
-                  <p className="text-xs text-gray-500 mb-3">
-                    {new Date(s.created_at).toLocaleString()}
-                  </p>
-
-                  <div className="flex items-center gap-2 mt-3">
+                  <div className="flex items-center gap-4 mt-6">
                     <div className="flex-1">
-                      <QRCodeCanvas
-                        value={`${window.location.origin}/session/${s.id}`}
-                        size={80}
-                      />
+                      <div className="p-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur">
+                        <QRCodeCanvas
+                          value={`${window.location.origin}/session/${s.id}`}
+                          size={72}
+                          level="H"
+                          className="mx-auto"
+                        />
+                      </div>
                     </div>
+
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           copyJoinLink(s.id);
                         }}
-                        className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-2 rounded transition"
+                        className={`flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                          copiedId === s.id
+                            ? "bg-green-600 text-white"
+                            : "bg-white/10 hover:bg-white/20 border border-white/20"
+                        }`}
                       >
-                        Link kopieren
+                        {copiedId === s.id ? (
+                          <>Checkmark</>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>Link</span>
+                          </>
+                        )}
                       </button>
-                      {/* Lösch-Button, nur für den Host sichtbar */}
+
                       {userId && Number(userId) === s.hostId && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (
-                              window.confirm(
-                                "Möchtest du die Session wirklich löschen? Alle Teilnehmer werden entfernt.",
-                              )
-                            ) {
-                              deleteSession(s.id);
-                            }
+                            setShowDeleteModal(s.id);
                           }}
-                          className="text-xs bg-red-100 hover:bg-red-200 text-red-700 py-1 px-2 rounded transition"
+                          className="flex items-center justify-center space-x-2 px-3 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/50 text-xs font-medium transition-all"
                         >
-                          Session löschen
+                          <Trash2 className="w-4 h-4" />
+                          <span>Löschen</span>
                         </button>
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
-          )}
-        </section>
+            </AnimatePresence>
+          </div>
+        )}
       </main>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowDeleteModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-gradient-to-br from-purple-900/90 to-blue-900/90 backdrop-blur-2xl rounded-3xl p-8 max-w-md w-full border border-white/20 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-3 rounded-xl bg-red-600/20">
+                  <AlertCircle className="w-6 h-6 text-red-400" />
+                </div>
+                <h3 className="text-2xl font-bold">Session löschen?</h3>
+              </div>
+
+              <p className="text-gray-300 mb-8">
+                Diese Aktion kann nicht rückgängig gemacht werden. Alle Teilnehmer werden entfernt.
+              </p>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowDeleteModal(null)}
+                  className="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 font-medium transition-all"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={() => deleteSession(showDeleteModal)}
+                  className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 font-medium transition-all"
+                >
+                  Löschen
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
