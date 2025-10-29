@@ -42,7 +42,7 @@ export default function Dashboard() {
   const fetchSessions = async () => {
     if (!token) return;
     try {
-      const res = await axios.get("https://tunevote.com//sessions", {
+      const res = await axios.get("https://tunevote.com/sessions", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSessions(res.data);
@@ -58,7 +58,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://tunevote.com//sessions",
+        "https://tunevote.com/sessions",
         { title: newSessionTitle },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -73,7 +73,7 @@ export default function Dashboard() {
 
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`https://tunevote.com//sessions/${sessionId}`, {
+      await axios.delete(`https://tunevote.com/sessions/${sessionId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
