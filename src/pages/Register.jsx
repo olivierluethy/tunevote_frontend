@@ -19,7 +19,7 @@ export default function Register() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("https://tunevote.com//register", {
+      const res = await axios.post("https://tunevote.com/register", {
         username,
         email,
         password,
