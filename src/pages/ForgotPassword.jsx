@@ -1,34 +1,30 @@
-// src/pages/Login.jsx
+// src/pages/PasswordReset.jsx
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, Music, Sparkles, AlertCircle } from "lucide-react";
+import { Mail, ArrowLeft, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
 
-export default function Login() {
+export default function PasswordReset() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setMessage("");
     setLoading(true);
+    setSuccess(false);
 
     try {
-      const res = await axios.post("https://api.tunevote.com/login", { email, password });
-      const { token, username } = res.data;
-      const payload = JSON.parse(atob(token.split(".")[1]));
-
-      localStorage.setItem("token", token);
-      localStorage.setItem("username", username);
-      localStorage.setItem("userId", payload.id);
-
-      navigate("/dashboard");
+      const res = await axios.post("https://api.tunevote.com/forgot-password", { email });
+      setMessage(res.data.message || "Reset link sent! Check your email.");
+      setSuccess(true);
+      setEmail("");
     } catch (err) {
-      setError(err.response?.data?.error || "Server error");
+      setMessage(err.response?.data?.error || "Server error. Try again.");
+      setSuccess(false);
+    } finally {
       setLoading(false);
     }
   };
@@ -40,7 +36,7 @@ export default function Login() {
         <motion.div
           animate={{
             x: [0, 100, 0],
-            y: [0, -100, 0],
+            y: [0, -80, 0],
           }}
           transition={{
             duration: 20,
@@ -51,7 +47,7 @@ export default function Login() {
         />
         <motion.div
           animate={{
-            x: [0, -150, 0],
+            x: [0, -130, 0],
             y: [0, 100, 0],
           }}
           transition={{
@@ -97,34 +93,34 @@ export default function Login() {
         />
       ))}
 
-      {/* Login Card */}
+      {/* Reset Card */}
       <motion.div
-        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        initial={{ scale: 0.9, opacity: 0, y: 30 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
+        transition={{ duration: 0.7, ease: "easeOut" }}
         className="relative z-10 backdrop-blur-2xl bg-white/10 rounded-3xl p-10 w-full max-w-md border border-white/20 shadow-2xl"
       >
         {/* Logo + Title */}
         <div className="text-center mb-8">
           <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
             className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 mb-4"
           >
-            <Music className="w-10 h-10 text-white" />
+            <Mail className="w-10 h-10 text-white" />
           </motion.div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-            Welcome Back
+            Reset Password
           </h1>
-          <p className="text-gray-300 mt-2">Log in to sync the vibe</p>
+          <p className="text-gray-300 mt-2">Enter your email to receive a reset link</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Email Field */}
           <motion.div
-            initial={{ x: -50, opacity: 0 }}
+            initial={{ x: -60, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.3 }}
           >
@@ -142,46 +138,30 @@ export default function Login() {
             />
           </motion.div>
 
-          {/* Password Field */}
-          <motion.div
-            initial={{ x: 50, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-200 mb-2">
-              <Lock className="w-4 h-4" />
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-5 py-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all duration-300"
-              placeholder="••••••••"
-              required
-            />
-          </motion.div>
-
-          {/* Error Message */}
+          {/* Message */}
           <AnimatePresence>
-            {error && (
+            {message && (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="flex items-center gap-2 p-4 rounded-2xl bg-red-600/20 border border-red-500/50 text-red-300"
+                initial={{ opacity: 0, y: -10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.9 }}
+                className={`flex items-center gap-2 p-4 rounded-2xl border text-sm font-medium ${
+                  success
+                    ? "bg-green-600/20 border-green-500/50 text-green-300"
+                    : "bg-red-600/20 border-red-500/50 text-red-300"
+                }`}
               >
-                <AlertCircle className="w-5 h-5" />
-                <span className="text-sm">{error}</span>
+                {success ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                <span>{message}</span>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Submit Button */}
           <motion.div
-            initial={{ y: 20, opacity: 0 }}
+            initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5 }}
+            transition={{ delay: 0.4 }}
           >
             <button
               type="submit"
@@ -197,42 +177,28 @@ export default function Login() {
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  <span>Log In</span>
+                  <span>Send Reset Link</span>
                 </>
               )}
             </button>
           </motion.div>
         </form>
 
-        {/* Register Link */}
-        <motion.p
+        {/* Back to Login */}
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="mt-8 text-center text-gray-300"
+          transition={{ delay: 0.5 }}
+          className="mt-8 text-center"
         >
-          Don’t have an account?{" "}
           <a
-            href="/register"
-            className="font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent hover:underline"
+            href="/login"
+            className="inline-flex items-center gap-2 text-gray-300 hover:text-purple-300 transition-colors font-medium"
           >
-            Register now
+            <ArrowLeft className="w-4 h-4" />
+            Back to Login
           </a>
-        </motion.p>
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="mt-8 text-center text-gray-300"
-        >
-          Forgot Password?{" "}
-          <a
-            href="/forgot-password"
-            className="font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent hover:underline"
-          >
-            Request reset Link
-          </a>
-        </motion.p>
+        </motion.div>
       </motion.div>
     </div>
   );

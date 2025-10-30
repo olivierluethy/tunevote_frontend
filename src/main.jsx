@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SessionPage from './components/SessionPage';
+import ForgotPassowrd from './pages/ForgotPassword';
 import Home from './pages/Home'; // ✅ Home-Seite importieren
 
 // ✅ Authentifizierungs-Wrapper
@@ -30,6 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         {/* 🔐 Auth */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassowrd />} />
 
         {/* 📊 Geschützte Seite */}
         <Route
