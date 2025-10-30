@@ -59,16 +59,17 @@ export default function SessionLive() {
   const [sessionLive, setSessionLive] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const token = localStorage.getItem("token");
-  const guestToken = localStorage.getItem("guestToken");
   const userId = localStorage.getItem("userId");
 
   const getAuthHeaders = () => {
-    const headers = {};
-    if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
-    else if (guestToken && !token) headers["x-guest-token"] = guestToken;
-    return headers;
-  };
+  const headers = {};
+  const token = localStorage.getItem('token');
+  const guestToken = localStorage.getItem('guestToken');
+
+  if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
+  else if (guestToken && !token) headers['x-guest-token'] = guestToken;
+  return headers;
+};
 
   const loadSessionData = useCallback(async () => {
     try {
