@@ -12,7 +12,8 @@ import Home from './pages/Home'; // ✅ Home-Seite importieren
 // ✅ Authentifizierungs-Wrapper
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" replace />;
+  const guestToken = localStorage.getItem('guestToken');
+  return (token || guestToken) ? children : <Navigate to="/login" replace />;
 };
 
 // ✅ Home-Komponente mit Weiterleitung, falls eingeloggt
@@ -37,9 +38,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route
           path="/dashboard"
           element={
-            <RequireAuth>
               <Dashboard />
-            </RequireAuth>
+            
           }
         />
 
