@@ -16,51 +16,83 @@ import {
   Link2,
   Sparkles,
   AlertCircle,
+  UserPlus,
 } from "lucide-react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const username = localStorage.getItem("username");
-  const userId = localStorage.getItem("userId");
-  const token = localStorage.getItem("token");
 
+  // Auth
+  const token = localStorage.getItem("token");
+  const guestToken = localStorage.getItem("guestToken");
+  const username = localStorage.getItem("username");
+  const guestName = localStorage.getItem("guestName") || "Gast";
+  const userId = localStorage.getItem("userId");
+
+  // Zustand
   const [sessions, setSessions] = useState([]);
   const [newSessionTitle, setNewSessionTitle] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(null);
 
-  useEffect(() => {
-    if (token) fetchSessions();
-  }, [token]);
+  // Prüfungen
+  const isGuest = !token && guestToken;
+  const isLoggedIn = !!token;
+  const displayName = isGuest ? guestName : username;
 
+  // === Auth Headers ===
+  const getAuthHeaders = () => {
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    else if (guestToken) headers["x-guest-token"] = guestToken;
+    return headers;
+  };
+
+  // === Sessions laden ===
+  const fetchSessions = async () => {
+  try {
+    const res = await axios.get("http://localhost:4000/sessions", {
+      headers: getAuthHeaders(),
+    });
+    setSessions(res.data);
+  } catch (err) {
+    console.error("Fehler beim Laden der Sessions:", err);
+
+    // Nur bei echten Token-Problemen ausloggen, nicht bei Gast-Token
+    if (
+      !isGuest &&
+      (err.response?.status === 401 || err.response?.status === 403)
+    ) {
+      localStorage.clear();
+      navigate("/login");
+    }
+  }
+};
+
+  useEffect(() => {
+    if (token || guestToken) {
+      fetchSessions();
+    } else {
+      navigate("/login");
+    }
+  }, [token, guestToken]);
+
+  // === Logout ===
   const handleLogout = () => {
     localStorage.clear();
     navigate("/login");
   };
 
-  const fetchSessions = async () => {
-    if (!token) return;
-    try {
-      const res = await axios.get("https://api.tunevote.com/sessions", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSessions(res.data);
-    } catch (err) {
-      if (err.response?.status === 401) {
-        handleLogout();
-      }
-    }
-  };
-
+  // === Session erstellen (nur eingeloggte) ===
   const createSession = async () => {
-    if (!newSessionTitle.trim() || loading) return;
+    if (!isLoggedIn || !newSessionTitle.trim() || loading) return;
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://api.tunevote.com/sessions",
+        "http://localhost:4000/sessions",
         { title: newSessionTitle },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: getAuthHeaders() }
       );
       setSessions((prev) => [res.data, ...prev]);
       setNewSessionTitle("");
@@ -71,10 +103,11 @@ export default function Dashboard() {
     }
   };
 
+  // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      await axios.delete(`http://localhost:4000/sessions/${sessionId}`, {
+        headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setShowDeleteModal(null);
@@ -83,6 +116,7 @@ export default function Dashboard() {
     }
   };
 
+  // === Link kopieren ===
   const copyJoinLink = (sessionId) => {
     const link = `${window.location.origin}/session/${sessionId}`;
     navigator.clipboard.writeText(link);
@@ -90,11 +124,13 @@ export default function Dashboard() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // === Session öffnen ===
   const openSession = (session) => {
     navigate(`/session/${session.id}`);
   };
 
-  if (!token) {
+  // === Schutz: Kein Zugriff ohne Token oder GuestToken ===
+  if (!token && !guestToken) {
     navigate("/login");
     return null;
   }
@@ -117,7 +153,8 @@ export default function Dashboard() {
           <div className="flex items-center space-x-3">
             <Music className="w-8 h-8 text-purple-400" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Welcome back, <span className="text-white">{username}</span>!
+              Willkommen, <span className="text-white">{displayName}</span>!
+              {isGuest && <span className="text-sm text-yellow-400 ml-2">(Gast)</span>}
             </h1>
           </div>
           <button
@@ -125,50 +162,79 @@ export default function Dashboard() {
             className="group flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-red-600/20 border border-red-500/50 hover:bg-red-600/30 transition-all duration-300"
           >
             <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span className="font-medium">Logout</span>
+            <span className="font-medium">{isGuest ? "Verlassen" : "Logout"}</span>
           </button>
         </div>
       </motion.header>
 
       <main className="relative z-10 max-w-7xl mx-auto px-6 py-10">
-        {/* Create Session Card - Floating */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="mb-12"
-        >
-          <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
-                <Plus className="w-6 h-6" />
+
+        {/* === GAST-BANNER === */}
+        {isGuest && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-5 bg-gradient-to-r from-yellow-600/20 to-orange-600/20 backdrop-blur-lg border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-lg"
+          >
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="w-6 h-6 text-yellow-400" />
+              <div>
+                <p className="font-semibold text-yellow-200">Gastmodus aktiv</p>
+                <p className="text-sm text-yellow-300">
+                  Erstelle einen Account, um Sessions zu erstellen und zu löschen!
+                </p>
               </div>
-              <h2 className="text-2xl font-bold">Neue Session starten</h2>
             </div>
+            <button
+              onClick={() => navigate("/register")}
+              className="px-5 py-2 bg-yellow-500 text-purple-900 font-bold rounded-xl hover:bg-yellow-400 transition-all flex items-center space-x-2"
+            >
+              <UserPlus className="w-5 h-5" />
+              <span>Account erstellen</span>
+            </button>
+          </motion.div>
+        )}
 
-            <div className="flex gap-4">
-              <input
-                type="text"
-                placeholder="z.B. Summer Vibes 2025"
-                className="flex-1 px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
-                value={newSessionTitle}
-                onChange={(e) => setNewSessionTitle(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && createSession()}
-                disabled={loading}
-              />
-              <button
-                onClick={createSession}
-                disabled={loading || !newSessionTitle.trim()}
-                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
-              </button>
+        {/* === Session erstellen (nur eingeloggte) === */}
+        {isLoggedIn && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="mb-12"
+          >
+            <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <h2 className="text-2xl font-bold">Neue Session starten</h2>
+              </div>
+
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  placeholder="z.B. Summer Vibes 2025"
+                  className="flex-1 px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
+                  value={newSessionTitle}
+                  onChange={(e) => setNewSessionTitle(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && createSession()}
+                  disabled={loading}
+                />
+                <button
+                  onClick={createSession}
+                  disabled={loading || !newSessionTitle.trim()}
+                  className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                  <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
 
-        {/* Sessions Grid */}
+        {/* === Sessions Grid === */}
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold flex items-center space-x-3">
             <Radio className="w-8 h-8 text-purple-400" />
@@ -187,7 +253,11 @@ export default function Dashboard() {
               <Music className="w-16 h-16 text-gray-500" />
             </div>
             <p className="text-xl text-gray-400">Noch keine Sessions</p>
-            <p className="text-gray-500">Erstelle deine erste Session oben!</p>
+            {isGuest ? (
+              <p className="text-gray-500">Tritt einer Session bei oder erstelle einen Account!</p>
+            ) : (
+              <p className="text-gray-500">Erstelle deine erste Session oben!</p>
+            )}
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -243,6 +313,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex flex-col gap-2">
+                      {/* Link kopieren */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -264,7 +335,8 @@ export default function Dashboard() {
                         )}
                       </button>
 
-                      {userId && Number(userId) === s.hostId && (
+                      {/* Löschen – nur für Host (eingeloggter Nutzer) */}
+                      {isLoggedIn && userId && Number(userId) === s.hostId && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -285,7 +357,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* Delete Confirmation Modal */}
+      {/* === Delete Modal === */}
       <AnimatePresence>
         {showDeleteModal && (
           <motion.div

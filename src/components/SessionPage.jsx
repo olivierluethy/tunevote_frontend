@@ -5,7 +5,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "http://localhost:4000";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -45,37 +45,45 @@ const SessionPage = () => {
   const userId = localStorage.getItem("userId");
 
   const getAuthHeaders = () => {
-    const headers = {};
     const token = localStorage.getItem("token");
-    const guestToken = localStorage.getItem("guestToken");
+  const guestToken = localStorage.getItem("guestToken");
 
-    if (token && !guestToken) headers.Authorization = `Bearer ${token}`;
-    else if (guestToken && !token) headers["x-guest-token"] = guestToken;
-    return headers;
+  return {
+    "Content-Type": "application/json",
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : guestToken
+      ? { "x-guest-token": guestToken }
+      : {}),
+  };
   };
 
   const loadSessionData = useCallback(async () => {
-    try {
-      const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
-          headers: getAuthHeaders(),
-        }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
-          headers: getAuthHeaders(),
-        }),
-      ]);
+  try {
+    const [sessRes, queueRes] = await Promise.all([
+      axios.get(`http://localhost:4000/sessions/${sessionId}`, {
+        headers: getAuthHeaders(),
+      }),
+      axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
+        headers: getAuthHeaders(),
+      }),
+    ]);
 
-      setSession(sessRes.data);
-      setQueue(queueRes.data || []);
-      setIsHost(sessRes.data.hostId === Number(userId));
-      setSessionLive(!!sessRes.data.is_live);
-    } catch (err) {
-      console.error(err);
-      if (err.response?.status === 401 || err.response?.status === 403)
-        setShowGuestModal(true);
-      else if (err.response?.status === 404) navigate("/dashboard");
+    setSession(sessRes.data);
+    setQueue(queueRes.data || []);
+    setIsHost(sessRes.data.hostId === Number(userId));
+    setSessionLive(!!sessRes.data.is_live);
+
+    // Gast: Kein userId → isHost = false → korrekt
+  } catch (err) {
+    console.error(err);
+    if (err.response?.status === 401 || err.response?.status === 403) {
+      setShowGuestModal(true);
+    } else if (err.response?.status === 404) {
+      navigate("/dashboard");
     }
-  }, [sessionId, userId, navigate]);
+  }
+}, [sessionId, userId, navigate]);
 
   useEffect(() => {
     if (token || guestToken) {
@@ -101,22 +109,19 @@ const SessionPage = () => {
     );
     socketRef.current.on("queue_updated", loadSessionData);
     socketRef.current.on("session_started", (data) => {
-      console.log("Session started broadcast:", data);
-      loadSessionData();
-      setSessionLive(true);
-      if (isLiveJoined && data.firstVideoId) {
-        syncPlayback({
-          current_video_id: data.firstVideoId,
-          video_start_time: data.video_start_time,
-          is_playing: true,
-        });
-      }
-      if (isHost && playerRef.current) {
-        playerRef.current.stopVideo();
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
+  console.log("Session started broadcast:", data);
+  setSessionLive(true);
+  loadSessionData();
+
+  // WICHTIG: Auch für Gäste syncen!
+  if (isLiveJoined && data.firstVideoId) {
+    syncPlayback({
+      current_video_id: data.firstVideoId,
+      video_start_time: data.video_start_time,
+      is_playing: true,
     });
+  }
+});
 
     socketRef.current.on("playback_sync", (data) => {
       if (!isLiveJoined) return;
@@ -262,44 +267,50 @@ const SessionPage = () => {
 
   // === Join Live ===
   const joinLive = async () => {
-    if (!sessionLive) return;
-    setIsLiveJoined(true);
+  if (!sessionLive || isLiveJoined) return;
+  setIsLiveJoined(true);
 
-    try {
-      await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
-        {},
-        { headers: getAuthHeaders() },
-      );
-      const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
-      );
+  try {
+    // Join mit Auth (Gast oder eingeloggt)
+    await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/join-live`,
+      {},
+      { headers: getAuthHeaders() }
+    );
 
-      if (data.current_video_id && data.video_start_time) {
-        syncPlayback(data);
-      }
-    } catch (err) {
-      console.error("Sync failed", err);
-      setIsLiveJoined(false); // Revert on error
-      loadSessionData(); // Reload to ensure UI consistency
+    // Sync-Daten holen
+    const { data } = await axios.get(
+      `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+      { headers: getAuthHeaders() } // WICHTIG: Auch hier!
+    );
+
+    if (data.current_video_id && data.video_start_time) {
+      syncPlayback(data);
     }
+  } catch (err) {
+    console.error("Join Live failed", err);
+    setIsLiveJoined(false);
+    alert("Fehler beim Beitreten zur Live-Session");
+  }
 
-    syncIntervalRef.current = setInterval(async () => {
-      if (!isLiveJoined) return;
-      try {
-        const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
-        );
-        if (data.current_video_id && data.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
-          const current = playerRef.current?.getCurrentTime() || 0;
-          if (Math.abs(current - elapsed) > 2) {
-            playerRef.current?.seekTo(elapsed, true);
-          }
+  // Regelmäßiger Sync
+  syncIntervalRef.current = setInterval(async () => {
+    if (!isLiveJoined) return;
+    try {
+      const { data } = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+        { headers: getAuthHeaders() }
+      );
+      if (data.current_video_id && data.video_start_time) {
+        const elapsed = (Date.now() - data.video_start_time) / 1000;
+        const current = playerRef.current?.getCurrentTime() || 0;
+        if (Math.abs(current - elapsed) > 2) {
+          playerRef.current?.seekTo(elapsed, true);
         }
-      } catch {}
-    }, 10000);
-  };
+      }
+    } catch {}
+  }, 10000);
+};
 
   // === Leave Live ===
   const leaveLive = async () => {
@@ -313,7 +324,7 @@ const SessionPage = () => {
     }
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -336,7 +347,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
+        `http://localhost:4000/sessions/${sessionId}/start`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -389,7 +400,7 @@ const SessionPage = () => {
   const proposeSong = async (video) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         {
           videoId: video.id.videoId,
           title: video.snippet.title,
@@ -406,19 +417,23 @@ const SessionPage = () => {
   };
 
   const handleGuestJoin = async () => {
-    if (!nickname.trim()) return;
-    try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
-        nickname,
-      });
-      localStorage.setItem("guestToken", res.data.guestToken);
-      localStorage.setItem("guestName", nickname);
-      setShowGuestModal(false);
-      loadSessionData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  if (!nickname.trim()) return;
+  try {
+    const res = await axios.post("http://localhost:4000/guest/join", {
+      nickname,
+    });
+
+    // WICHTIG: Erst speichern, DANN Modal schließen!
+    localStorage.setItem("guestToken", res.data.guestToken);
+    localStorage.setItem("guestName", nickname);
+
+    setShowGuestModal(false); // Jetzt schließen
+    await loadSessionData(); // Jetzt mit Token laden
+  } catch (err) {
+    console.error(err);
+    alert("Fehler beim Beitreten als Gast");
+  }
+};
 
   if (showGuestModal) {
     return (
@@ -668,7 +683,7 @@ const SessionPage = () => {
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
                     {
                       item_type: "pause",
                       duration: pauseDuration,
