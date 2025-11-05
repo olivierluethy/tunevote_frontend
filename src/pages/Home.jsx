@@ -1,36 +1,56 @@
 // src/pages/Home.jsx
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { 
-  Play, 
-  Users, 
-  Zap, 
-  Music, 
-  Heart, 
-  Shuffle, 
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import {
+  Play,
+  Users,
+  Zap,
+  Music,
+  Heart,
+  Shuffle,
   ArrowRight,
   Headphones,
   Mic,
-  Sparkles
-} from 'lucide-react';
+  Sparkles,
+} from "lucide-react";
 
 export default function Home() {
-  const [audio] = useState(new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'));
+  const [audio] = useState(
+    new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"),
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [votes, setVotes] = useState({ yes: 42, no: 8, idk: 15 });
   const [queue, setQueue] = useState([
-    { id: 1, title: 'Blinding Lights', artist: 'The Weeknd', votes: 89, cover: 'https://i.scdn.co/image/ab67616d00001e02ff9ca10b55ce82aeab78608a' },
-    { id: 2, title: 'Levitating', artist: 'Dua Lipa', votes: 76, cover: 'https://i.scdn.co/image/ab67616d00001e028f8c0c1d2b9f9a7b4d9f6c5e' },
-    { id: 3, title: 'Good 4 U', artist: 'Olivia Rodrigo', votes: 71, cover: 'https://i.scdn.co/image/ab67616d00001e02e4a2f3b3f9a7b4d9f6c5e4a2' }
+    {
+      id: 1,
+      title: "Blinding Lights",
+      artist: "The Weeknd",
+      votes: 89,
+      cover: "https://i.scdn.co/image/ab67616d00001e02ff9ca10b55ce82aeab78608a",
+    },
+    {
+      id: 2,
+      title: "Levitating",
+      artist: "Dua Lipa",
+      votes: 76,
+      cover: "https://i.scdn.co/image/ab67616d00001e028f8c0c1d2b9f9a7b4d9f6c5e",
+    },
+    {
+      id: 3,
+      title: "Good 4 U",
+      artist: "Olivia Rodrigo",
+      votes: 71,
+      cover: "https://i.scdn.co/image/ab67616d00001e02e4a2f3b3f9a7b4d9f6c5e4a2",
+    },
   ]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setVotes(prev => ({
+      setVotes((prev) => ({
         yes: prev.yes + Math.floor(Math.random() * 3),
         no: prev.no + Math.floor(Math.random() * 2),
-        idk: prev.idk + Math.floor(Math.random() * 2)
+        idk: prev.idk + Math.floor(Math.random() * 2),
       }));
     }, 3000);
     return () => clearInterval(interval);
@@ -46,6 +66,27 @@ export default function Home() {
     setIsPlaying(!isPlaying);
   };
 
+  // ✅ handleJoinSession ruft die Backend-Route auf
+  const handleJoinSession = async () => {
+    try {
+      const res = await fetch("http://localhost:4000/join");
+      const data = await res.json();
+
+      if (data.redirect) {
+        // Variante 1: Browser-Redirect (empfohlen)
+        window.location.href = data.redirect;
+
+        // Variante 2: React-Navigation (wenn gleiche Domain)
+        // navigate(`/session/${sessionIdAusURL}`);
+      } else {
+        alert(data.error || "Keine aktive Session gefunden.");
+      }
+    } catch (err) {
+      console.error("Fehler beim Beitritt:", err);
+      alert("Fehler beim Beitritt zur Session.");
+    }
+  };
+
   return (
     <>
       {/* Navigation */}
@@ -59,12 +100,18 @@ export default function Home() {
               </span>
             </Link>
             <div className="flex space-x-4">
-              <Link to="/login" className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 transition-colors">
+              <Link
+                to="/dashboard"
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 font-semibold hover:shadow-lg hover:shadow-purple-500/40 transition-all"
+              >
                 Start Session
               </Link>
-              <Link to="/join" className="px-4 py-2 rounded-lg border border-purple-400 hover:bg-purple-400/20 transition-colors">
+              <button
+                onClick={handleJoinSession}
+                className="px-4 py-2 rounded-lg border border-purple-400 text-purple-300 hover:bg-purple-400/20 font-semibold transition-all"
+              >
                 Join Session
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -88,19 +135,20 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
               <Link
-                to="/create"
+                to="/dashboard"
                 className="group px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold text-lg flex items-center justify-center space-x-2 hover:shadow-2xl hover:shadow-purple-500/50 transition-all"
               >
                 <Play className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 <span>Start a Session</span>
               </Link>
-              <Link
-                to="/join"
+
+              <button
+                onClick={handleJoinSession}
                 className="group px-8 py-4 bg-white/10 backdrop-blur rounded-full font-semibold text-lg flex items-center justify-center space-x-2 border border-white/20 hover:bg-white/20 transition-all"
               >
                 <Users className="w-5 h-5" />
                 <span>Join a Session</span>
-              </Link>
+              </button>
             </div>
 
             {/* Demo Video Placeholder */}
@@ -152,16 +200,28 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">How It Works</h2>
-            <p className="text-xl text-gray-400">Simple, fun, and collaborative</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              How It Works
+            </h2>
+            <p className="text-xl text-gray-400">
+              Simple, fun, and collaborative
+            </p>
           </motion.div>
 
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { icon: Music, title: 'Suggest', desc: 'Add your favorite tracks to the queue' },
-              { icon: Heart, title: 'Vote', desc: 'Like, dislike, or stay neutral' },
-              { icon: Zap, title: 'Play', desc: 'Winner plays automatically' },
-              { icon: Shuffle, title: 'Loop', desc: 'Keep the party going!' }
+              {
+                icon: Music,
+                title: "Suggest",
+                desc: "Add your favorite tracks to the queue",
+              },
+              {
+                icon: Heart,
+                title: "Vote",
+                desc: "Like, dislike, or stay neutral",
+              },
+              { icon: Zap, title: "Play", desc: "Winner plays automatically" },
+              { icon: Shuffle, title: "Loop", desc: "Keep the party going!" },
             ].map((step, i) => (
               <motion.div
                 key={i}
@@ -183,9 +243,21 @@ export default function Home() {
           {/* Scenario Cards */}
           <div className="grid md:grid-cols-3 gap-6 mt-16">
             {[
-              { title: 'Road Trip', emoji: '🚗', desc: 'Perfect playlist for the journey' },
-              { title: 'House Party', emoji: '🎉', desc: 'Everyone gets a say in the music' },
-              { title: 'Workout Session', emoji: '💪', desc: 'High-energy tracks voted live' }
+              {
+                title: "Road Trip",
+                emoji: "🚗",
+                desc: "Perfect playlist for the journey",
+              },
+              {
+                title: "House Party",
+                emoji: "🎉",
+                desc: "Everyone gets a say in the music",
+              },
+              {
+                title: "Workout Session",
+                emoji: "💪",
+                desc: "High-energy tracks voted live",
+              },
             ].map((scenario, i) => (
               <motion.div
                 key={i}
@@ -210,7 +282,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Live Voting in Action</h2>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Live Voting in Action
+            </h2>
             <p className="text-xl text-gray-400">See democracy in music</p>
           </motion.div>
 
@@ -236,7 +310,9 @@ export default function Home() {
                     <div className="w-full max-w-xs bg-gray-700 rounded-full h-3 mx-4">
                       <motion.div
                         className="bg-gradient-to-r from-green-400 to-green-600 h-3 rounded-full"
-                        animate={{ width: `${(votes.yes / (votes.yes + votes.no + votes.idk)) * 100}%` }}
+                        animate={{
+                          width: `${(votes.yes / (votes.yes + votes.no + votes.idk)) * 100}%`,
+                        }}
                         transition={{ duration: 0.5 }}
                       />
                     </div>
@@ -249,7 +325,9 @@ export default function Home() {
                     <div className="w-full max-w-xs bg-gray-700 rounded-full h-3 mx-4">
                       <motion.div
                         className="bg-gradient-to-r from-red-400 to-red-600 h-3 rounded-full"
-                        animate={{ width: `${(votes.no / (votes.yes + votes.no + votes.idk)) * 100}%` }}
+                        animate={{
+                          width: `${(votes.no / (votes.yes + votes.no + votes.idk)) * 100}%`,
+                        }}
                         transition={{ duration: 0.5 }}
                       />
                     </div>
@@ -262,7 +340,9 @@ export default function Home() {
                     <div className="w-full max-w-xs bg-gray-700 rounded-full h-3 mx-4">
                       <motion.div
                         className="bg-gradient-to-r from-yellow-400 to-yellow-600 h-3 rounded-full"
-                        animate={{ width: `${(votes.idk / (votes.yes + votes.no + votes.idk)) * 100}%` }}
+                        animate={{
+                          width: `${(votes.idk / (votes.yes + votes.no + votes.idk)) * 100}%`,
+                        }}
                         transition={{ duration: 0.5 }}
                       />
                     </div>
@@ -290,7 +370,8 @@ export default function Home() {
                   Tie-Breaker Mode
                 </h3>
                 <p className="text-gray-300">
-                  When votes are tied, our smart algorithm randomly selects a winner with a dramatic countdown!
+                  When votes are tied, our smart algorithm randomly selects a
+                  winner with a dramatic countdown!
                 </p>
               </div>
 
@@ -300,7 +381,8 @@ export default function Home() {
                   DJ Effects
                 </h3>
                 <p className="text-gray-300">
-                  Hosts can enable loops, pitch shifts, reverse playback, and more for creative sessions.
+                  Hosts can enable loops, pitch shifts, reverse playback, and
+                  more for creative sessions.
                 </p>
               </div>
             </div>
@@ -317,8 +399,12 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">For Artists & DJs</h2>
-            <p className="text-xl text-gray-400">Engage fans like never before</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              For Artists & DJs
+            </h2>
+            <p className="text-xl text-gray-400">
+              Engage fans like never before
+            </p>
           </motion.div>
 
           <div className="grid lg:grid-cols-2 gap-12">
@@ -340,13 +426,19 @@ export default function Home() {
                     transition={{ delay: i * 0.1 }}
                     className="flex items-center space-x-4 bg-black/30 rounded-xl p-4"
                   >
-                    <img src={song.cover} alt={song.title} className="w-12 h-12 rounded-lg" />
+                    <img
+                      src={song.cover}
+                      alt={song.title}
+                      className="w-12 h-12 rounded-lg"
+                    />
                     <div className="flex-1">
                       <p className="font-semibold">{song.title}</p>
                       <p className="text-sm text-gray-400">{song.artist}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-purple-400">{song.votes}</p>
+                      <p className="text-2xl font-bold text-purple-400">
+                        {song.votes}
+                      </p>
                       <p className="text-xs text-gray-400">votes</p>
                     </div>
                   </motion.div>
@@ -367,7 +459,8 @@ export default function Home() {
               <div className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10">
                 <h3 className="text-2xl font-bold mb-4">💰 Monetization</h3>
                 <p className="text-gray-300 mb-4">
-                  Fans can subscribe to your exclusive sessions and tip during live performances.
+                  Fans can subscribe to your exclusive sessions and tip during
+                  live performances.
                 </p>
                 <div className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black rounded-lg p-4 font-bold">
                   Earn up to $500/session
@@ -375,9 +468,12 @@ export default function Home() {
               </div>
 
               <div className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10">
-                <h3 className="text-2xl font-bold mb-4">📊 Real-time Analytics</h3>
+                <h3 className="text-2xl font-bold mb-4">
+                  📊 Real-time Analytics
+                </h3>
                 <p className="text-gray-300">
-                  See which songs resonate most with your audience and build better sets.
+                  See which songs resonate most with your audience and build
+                  better sets.
                 </p>
               </div>
             </div>
@@ -394,15 +490,31 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">AI-Powered Suggestions</h2>
-            <p className="text-xl text-gray-400">Never run out of great music</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              AI-Powered Suggestions
+            </h2>
+            <p className="text-xl text-gray-400">
+              Never run out of great music
+            </p>
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { mood: 'Chill', songs: ['Ocean Eyes', 'Yellow', 'Weightless'], emoji: '🌊' },
-              { mood: 'Party', songs: ['Uptown Funk', 'Dance Monkey', 'Levitating'], emoji: '🎉' },
-              { mood: 'Focus', songs: ['Clair de Lune', 'Weightless', 'Nuvole Bianche'], emoji: '🎯' }
+              {
+                mood: "Chill",
+                songs: ["Ocean Eyes", "Yellow", "Weightless"],
+                emoji: "🌊",
+              },
+              {
+                mood: "Party",
+                songs: ["Uptown Funk", "Dance Monkey", "Levitating"],
+                emoji: "🎉",
+              },
+              {
+                mood: "Focus",
+                songs: ["Clair de Lune", "Weightless", "Nuvole Bianche"],
+                emoji: "🎯",
+              },
             ].map((card, i) => (
               <motion.div
                 key={i}
@@ -410,12 +522,19 @@ export default function Home() {
                 className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur rounded-2xl p-6 border border-white/10"
               >
                 <div className="text-5xl mb-4 text-center">{card.emoji}</div>
-                <h3 className="text-xl font-bold mb-3 text-center">{card.mood} Mode</h3>
+                <h3 className="text-xl font-bold mb-3 text-center">
+                  {card.mood} Mode
+                </h3>
                 <ul className="space-y-2">
                   {card.songs.map((song, j) => (
-                    <li key={j} className="text-sm text-gray-300 flex items-center justify-between">
+                    <li
+                      key={j}
+                      className="text-sm text-gray-300 flex items-center justify-between"
+                    >
                       <span>{song}</span>
-                      <button className="text-purple-400 hover:text-purple-300">+</button>
+                      <button className="text-purple-400 hover:text-purple-300">
+                        +
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -437,7 +556,7 @@ export default function Home() {
             </div>
 
             <div className="flex space-x-6 mb-4 md:mb-0">
-              {['Twitter', 'Instagram', 'Discord', 'GitHub'].map((social) => (
+              {["Twitter", "Instagram", "Discord", "GitHub"].map((social) => (
                 <a
                   key={social}
                   href="#"
@@ -457,7 +576,12 @@ export default function Home() {
           </div>
 
           <div className="mt-8 pt-8 border-t border-white/10 text-center text-sm text-gray-400">
-            <p>© 2025 TuneVote. All rights reserved. <a href="#" className="underline">Privacy Policy</a></p>
+            <p>
+              © 2025 TuneVote. All rights reserved.{" "}
+              <a href="#" className="underline">
+                Privacy Policy
+              </a>
+            </p>
           </div>
         </div>
       </footer>
