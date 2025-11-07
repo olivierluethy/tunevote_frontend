@@ -19,7 +19,13 @@ const SessionPage = () => {
   const [queue, setQueue] = useState([]);
   const [currentSong, setCurrentSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+
   const [searchResults, setSearchResults] = useState([]);
+
+  // 🔽 NEU
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+
   const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
   const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
 
@@ -40,60 +46,138 @@ const SessionPage = () => {
   const [isLiveJoined, setIsLiveJoined] = useState(false);
   const [sessionLive, setSessionLive] = useState(false);
 
+  // === AI RECOMMENDATIONS ===
+  const [recommendations, setRecommendations] = useState([]);
+  const [recLoading, setRecLoading] = useState(false);
+  const [addingId, setAddingId] = useState(null); // <-- NEU: für Button-Feedback
+
   const token = localStorage.getItem("token");
   const guestToken = localStorage.getItem("guestToken");
   const userId = localStorage.getItem("userId");
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
-  const guestToken = localStorage.getItem("guestToken");
+    const guestToken = localStorage.getItem("guestToken");
 
-  return {
-    "Content-Type": "application/json",
-    ...(token
-      ? { Authorization: `Bearer ${token}` }
-      : guestToken
-      ? { "x-guest-token": guestToken }
-      : {}),
-  };
+    return {
+      "Content-Type": "application/json",
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : guestToken
+          ? { "x-guest-token": guestToken }
+          : {}),
+    };
   };
 
   const loadSessionData = useCallback(async () => {
-  try {
-    const [sessRes, queueRes] = await Promise.all([
-      axios.get(`http://localhost:4000/sessions/${sessionId}`, {
-        headers: getAuthHeaders(),
-      }),
-      axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
-        headers: getAuthHeaders(),
-      }),
-    ]);
+    try {
+      const [sessRes, queueRes] = await Promise.all([
+        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
+          headers: getAuthHeaders(),
+        }),
+        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
+          headers: getAuthHeaders(),
+        }),
+      ]);
 
-    setSession(sessRes.data);
-    setQueue(queueRes.data || []);
-    setIsHost(sessRes.data.hostId === Number(userId));
-    setSessionLive(!!sessRes.data.is_live);
+      setSession(sessRes.data);
+      setQueue(queueRes.data || []);
+      setIsHost(sessRes.data.hostId === Number(userId));
+      setSessionLive(!!sessRes.data.is_live);
 
-    // Gast: Kein userId → isHost = false → korrekt
-  } catch (err) {
-    console.error(err);
-    if (err.response?.status === 401 || err.response?.status === 403) {
-      setShowGuestModal(true);
-    } else if (err.response?.status === 404) {
-      navigate("/dashboard");
+      // Gast: Kein userId → isHost = false → korrekt
+    } catch (err) {
+      console.error(err);
+      // WICHTIG: Kein navigate() hier!
+      // Nur State setzen → useEffect übernimmt Navigation
+      if (err.response?.status === 404) {
+        setSession(null); // Trigger useEffect
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
+        setShowGuestModal(true);
+      }
     }
-  }
-}, [sessionId, userId, navigate]);
+  }, [sessionId, userId, navigate]);
 
   useEffect(() => {
-    if (token || guestToken) {
-      loadSessionData();
-      const interval = setInterval(loadSessionData, 10000);
-      return () => clearInterval(interval);
-    } else {
-      setShowGuestModal(true);
+    let isMounted = true;
+
+    const fetchData = async () => {
+      if (!token && !guestToken) {
+        setShowGuestModal(true);
+        return;
+      }
+
+      try {
+        const [sessRes, queueRes] = await Promise.all([
+          axios.get(`http://localhost:4000/sessions/${sessionId}`, {
+            headers: getAuthHeaders(),
+          }),
+          axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
+            headers: getAuthHeaders(),
+          }),
+        ]);
+
+        if (!isMounted) return;
+
+        setSession(sessRes.data);
+        setQueue(queueRes.data || []);
+        setIsHost(sessRes.data.hostId === Number(userId));
+        setSessionLive(!!sessRes.data.is_live);
+      } catch (err) {
+        if (!isMounted) return;
+
+        if (err.response?.status === 404) {
+          navigate("/dashboard"); // Jetzt SICHER in useEffect!
+        } else if (
+          err.response?.status === 401 ||
+          err.response?.status === 403
+        ) {
+          setShowGuestModal(true);
+        }
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [sessionId, token, guestToken, navigate, userId]);
+
+  // === AI RECOMMENDATIONS FETCH ===
+  useEffect(() => {
+    if (
+      !isLiveJoined ||
+      queue.filter((i) => i.item_type === "music" && !i.played).length < 2
+    ) {
+      setRecommendations([]);
+      return;
     }
-  }, [loadSessionData, token, guestToken]);
+
+    const controller = new AbortController();
+    const fetchRec = async () => {
+      setRecLoading(true);
+      try {
+        const res = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
+          { headers: getAuthHeaders(), signal: controller.signal },
+        );
+        setRecommendations(res.data);
+      } catch (e) {
+        if (!axios.isCancel(e)) console.warn("rec fetch error", e);
+      } finally {
+        setRecLoading(false);
+      }
+    };
+
+    const timer = setTimeout(fetchRec, 800); // debounce
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isLiveJoined, queue, sessionId]);
 
   // === Socket.IO ===
   useEffect(() => {
@@ -109,19 +193,19 @@ const SessionPage = () => {
     );
     socketRef.current.on("queue_updated", loadSessionData);
     socketRef.current.on("session_started", (data) => {
-  console.log("Session started broadcast:", data);
-  setSessionLive(true);
-  loadSessionData();
+      console.log("Session started broadcast:", data);
+      setSessionLive(true);
+      loadSessionData();
 
-  // WICHTIG: Auch für Gäste syncen!
-  if (isLiveJoined && data.firstVideoId) {
-    syncPlayback({
-      current_video_id: data.firstVideoId,
-      video_start_time: data.video_start_time,
-      is_playing: true,
+      // WICHTIG: Auch für Gäste syncen!
+      if (isLiveJoined && data.firstVideoId) {
+        syncPlayback({
+          current_video_id: data.firstVideoId,
+          video_start_time: data.video_start_time,
+          is_playing: true,
+        });
+      }
     });
-  }
-});
 
     socketRef.current.on("playback_sync", (data) => {
       if (!isLiveJoined) return;
@@ -267,50 +351,50 @@ const SessionPage = () => {
 
   // === Join Live ===
   const joinLive = async () => {
-  if (!sessionLive || isLiveJoined) return;
-  setIsLiveJoined(true);
+    if (!sessionLive || isLiveJoined) return;
+    setIsLiveJoined(true);
 
-  try {
-    // Join mit Auth (Gast oder eingeloggt)
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/join-live`,
-      {},
-      { headers: getAuthHeaders() }
-    );
-
-    // Sync-Daten holen
-    const { data } = await axios.get(
-      `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-      { headers: getAuthHeaders() } // WICHTIG: Auch hier!
-    );
-
-    if (data.current_video_id && data.video_start_time) {
-      syncPlayback(data);
-    }
-  } catch (err) {
-    console.error("Join Live failed", err);
-    setIsLiveJoined(false);
-    alert("Fehler beim Beitreten zur Live-Session");
-  }
-
-  // Regelmäßiger Sync
-  syncIntervalRef.current = setInterval(async () => {
-    if (!isLiveJoined) return;
     try {
+      // Join mit Auth (Gast oder eingeloggt)
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+
+      // Sync-Daten holen
       const { data } = await axios.get(
         `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() }, // WICHTIG: Auch hier!
       );
+
       if (data.current_video_id && data.video_start_time) {
-        const elapsed = (Date.now() - data.video_start_time) / 1000;
-        const current = playerRef.current?.getCurrentTime() || 0;
-        if (Math.abs(current - elapsed) > 2) {
-          playerRef.current?.seekTo(elapsed, true);
-        }
+        syncPlayback(data);
       }
-    } catch {}
-  }, 10000);
-};
+    } catch (err) {
+      console.error("Join Live failed", err);
+      setIsLiveJoined(false);
+      alert("Fehler beim Beitreten zur Live-Session");
+    }
+
+    // Regelmäßiger Sync
+    syncIntervalRef.current = setInterval(async () => {
+      if (!isLiveJoined) return;
+      try {
+        const { data } = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+          { headers: getAuthHeaders() },
+        );
+        if (data.current_video_id && data.video_start_time) {
+          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const current = playerRef.current?.getCurrentTime() || 0;
+          if (Math.abs(current - elapsed) > 2) {
+            playerRef.current?.seekTo(elapsed, true);
+          }
+        }
+      } catch {}
+    }, 10000);
+  };
 
   // === Leave Live ===
   const leaveLive = async () => {
@@ -392,8 +476,30 @@ const SessionPage = () => {
         },
       );
       setSearchResults(res.data.items);
+
+      // 🔽 NEU: Wenn Live → auch AI-Suggestions abrufen
+      if (sessionLive && isLiveJoined) {
+        fetchAiSuggestions(searchQuery);
+      }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // 🔽 NEU: KI-Songvorschläge abrufen
+  const fetchAiSuggestions = async (query) => {
+    setAiLoading(true);
+    try {
+      const res = await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+        { query },
+        { headers: getAuthHeaders() },
+      );
+      setAiSuggestions(res.data || []);
+    } catch (err) {
+      console.warn("AI suggestion fetch failed", err);
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -417,23 +523,45 @@ const SessionPage = () => {
   };
 
   const handleGuestJoin = async () => {
-  if (!nickname.trim()) return;
-  try {
-    const res = await axios.post("http://localhost:4000/guest/join", {
-      nickname,
-    });
+    if (!nickname.trim()) return;
+    try {
+      const res = await axios.post("http://localhost:4000/guest/join", {
+        nickname,
+      });
 
-    // WICHTIG: Erst speichern, DANN Modal schließen!
-    localStorage.setItem("guestToken", res.data.guestToken);
-    localStorage.setItem("guestName", nickname);
+      // WICHTIG: Erst speichern, DANN Modal schließen!
+      localStorage.setItem("guestToken", res.data.guestToken);
+      localStorage.setItem("guestName", nickname);
 
-    setShowGuestModal(false); // Jetzt schließen
-    await loadSessionData(); // Jetzt mit Token laden
-  } catch (err) {
-    console.error(err);
-    alert("Fehler beim Beitreten als Gast");
-  }
-};
+      setShowGuestModal(false); // Jetzt schließen
+      await loadSessionData(); // Jetzt mit Token laden
+    } catch (err) {
+      console.error(err);
+      alert("Fehler beim Beitreten als Gast");
+    }
+  };
+
+  // === ADD RECOMMENDED SONG ===
+  // === ADD RECOMMENDED SONG (mit Feedback + Stabilität) ===
+  const addRecommendation = async (rec) => {
+    if (addingId === rec.youtubeId) return;
+    setAddingId(rec.youtubeId);
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
+        { youtubeId: rec.youtubeId, title: rec.title },
+        { headers: getAuthHeaders() },
+      );
+      loadSessionData();
+      setRecommendations((prev) =>
+        prev.filter((r) => r.youtubeId !== rec.youtubeId),
+      );
+    } catch (e) {
+      alert("Fehler beim Hinzufügen");
+    } finally {
+      setAddingId(null);
+    }
+  };
 
   if (showGuestModal) {
     return (
@@ -661,6 +789,52 @@ const SessionPage = () => {
           ))}
         </div>
 
+        {/* === NEU: KI-Vorschläge unter der Suche === */}
+        {aiLoading && (
+          <p className="text-sm text-gray-500 mt-2">
+            KI-Vorschläge werden geladen…
+          </p>
+        )}
+
+        {!aiLoading && aiSuggestions.length > 0 && (
+          <div className="mt-4 bg-gradient-to-r from-indigo-50 to-purple-50 p-3 rounded-lg shadow">
+            <h3 className="text-lg font-semibold text-purple-700 mb-2 flex items-center gap-2">
+              🎧 KI-Songvorschläge
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {aiSuggestions.map((sugg, index) => (
+                <div
+                  key={sugg.youtubeId}
+                  className="flex items-center gap-3 bg-white rounded p-2 shadow-sm hover:shadow transition"
+                >
+                  <img
+                    src={
+                      sugg.thumbnail ||
+                      `https://i.ytimg.com/vi/${sugg.youtubeId}/default.jpg`
+                    }
+                    alt={sugg.title}
+                    className="w-12 h-12 rounded"
+                  />
+                  <div className="flex-1 text-sm font-medium truncate">
+                    {sugg.title}
+                  </div>
+                  <button
+                    onClick={() =>
+                      addRecommendation({
+                        youtubeId: sugg.youtubeId,
+                        title: sugg.title,
+                      })
+                    }
+                    className="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700 transition"
+                  >
+                    +
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
           <div className="flex gap-3 items-center">
@@ -709,13 +883,13 @@ const SessionPage = () => {
           {queue.length === 0 ? (
             <p className="text-gray-500">Leer</p>
           ) : (
-            queue.map((item) => {
+            queue.map((item, index) => {
               const isCurrent =
                 currentSong?.videoId === item.video_id && isLiveJoined;
 
               return (
                 <div
-                  key={item.id}
+                  key={item.id ?? `queue-${item.video_id}-${index}`}
                   className={`flex items-center gap-3 mb-2 p-2 rounded transition-all ${
                     isCurrent
                       ? "bg-green-100 border-2 border-green-500 shadow-md"
@@ -749,6 +923,61 @@ const SessionPage = () => {
             })
           )}
         </div>
+
+        {/* === AI RECOMMENDATIONS UI (STABIL) === */}
+        {isLiveJoined && (
+          <div className="mt-6">
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+                AI-Vorschläge
+              </h2>
+
+              {recLoading ? (
+                <p className="text-sm text-gray-600">Lade Vorschläge…</p>
+              ) : recommendations.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">
+                  Keine Vorschläge verfügbar
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recommendations
+                    .filter((rec) => rec.youtubeId && rec.title)
+                    .map((rec) => (
+                      <div
+                        key={rec.youtubeId}
+                        className="flex items-center gap-2 p-2 bg-white rounded shadow-sm hover:shadow transition"
+                      >
+                        <img
+                          src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
+                          alt={rec.title}
+                          className="w-12 h-12 rounded"
+                          onError={(e) => {
+                            e.target.src = "/fallback-thumbnail.png";
+                          }}
+                        />
+                        <div className="flex-1 text-sm">
+                          <div className="font-medium truncate">
+                            {rec.title}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => addRecommendation(rec)}
+                          disabled={recLoading || addingId === rec.youtubeId}
+                          className={`px-2 py-1 rounded text-xs text-white transition ${
+                            recLoading || addingId === rec.youtubeId
+                              ? "bg-gray-400 cursor-not-allowed"
+                              : "bg-purple-600 hover:bg-purple-700"
+                          }`}
+                        >
+                          {addingId === rec.youtubeId ? "✓" : "+"}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {isLiveJoined && (
           <div
