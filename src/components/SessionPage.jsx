@@ -47,6 +47,11 @@ const SessionPage = () => {
   const [isLiveJoined, setIsLiveJoined] = useState(false);
   const [sessionLive, setSessionLive] = useState(false);
 
+  // === AI RECOMMENDATIONS ===
+  const [recommendations, setRecommendations] = useState([]);
+  const [recLoading, setRecLoading] = useState(false);
+  const [addingId, setAddingId] = useState(null); // <-- NEU: für Button-Feedback
+
   const token = localStorage.getItem("token");
   const guestToken = localStorage.getItem("guestToken");
   const userId = localStorage.getItem("userId");
@@ -221,6 +226,62 @@ const loadCache = useCallback(async () => {
     console.warn("[Cache] Laden fehlgeschlagen", err);
   }
 }, []);
+
+// === AI RECOMMENDATIONS FETCH ===
+// === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
+useEffect(() => {
+  if (!isLiveJoined || !currentSong?.videoId) {
+    setRecommendations([]);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  const fetchRec = async () => {
+    setRecLoading(true);
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/recommendations`,
+        { headers: getAuthHeaders(), signal: controller.signal },
+      );
+      setRecommendations(res.data);
+    } catch (e) {
+      if (!axios.isCancel(e)) console.warn("rec fetch error", e);
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  fetchRec(); // direkt ausführen, kein setTimeout
+
+  return () => {
+    controller.abort();
+  };
+}, [isLiveJoined, currentSong, sessionId]);
+
+const addRecommendation = async (rec) => {
+  if (addingId === rec.youtubeId) return;
+  setAddingId(rec.youtubeId);
+
+  try {
+    const { data: newItem } = await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
+      { youtubeId: rec.youtubeId },
+      { headers: getAuthHeaders() },
+    );
+
+    // Direkt in die Queue einfügen
+    setQueue(prev => [...prev, newItem]);
+
+    // Empfehlung entfernen
+    setRecommendations(prev => prev.filter(r => r.youtubeId !== rec.youtubeId));
+  } catch (e) {
+    console.error("Add recommendation error (frontend):", e);
+    alert("Fehler beim Hinzufügen");
+  } finally {
+    setAddingId(null);
+  }
+};
 
 // ← NEU: Cache beim Mount laden
 useEffect(() => {
@@ -635,6 +696,23 @@ useEffect(() => {
     }
   };
 
+  // 🔽 NEU: KI-Songvorschläge abrufen
+  const fetchAiSuggestions = async (query) => {
+    setAiLoading(true);
+    try {
+      const res = await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+        { query },
+        { headers: getAuthHeaders() },
+      );
+      setAiSuggestions(res.data || []);
+    } catch (err) {
+      console.warn("AI suggestion fetch failed", err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
  const proposeSong = async (video) => {
   try {
     const videoId = video.id?.videoId || video.youtubeId;
@@ -1046,6 +1124,61 @@ useEffect(() => {
             })
           )}
         </div>
+
+        {/* === AI RECOMMENDATIONS UI (STABIL) === */}
+        {isLiveJoined && (
+          <div className="mt-6">
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+                AI-Vorschläge
+              </h2>
+
+              {recLoading ? (
+                <p className="text-sm text-gray-600">Lade Vorschläge…</p>
+              ) : recommendations.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">
+                  Keine Vorschläge verfügbar
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recommendations
+                    .filter((rec) => rec.youtubeId && rec.title)
+                    .map((rec) => (
+                      <div
+                        key={rec.youtubeId}
+                        className="flex items-center gap-2 p-2 bg-white rounded shadow-sm hover:shadow transition"
+                      >
+                        <img
+                          src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
+                          alt={rec.title}
+                          className="w-12 h-12 rounded"
+                          onError={(e) => {
+                            e.target.src = "/fallback-thumbnail.png";
+                          }}
+                        />
+                        <div className="flex-1 text-sm">
+                          <div className="font-medium truncate">
+                            {rec.title}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => addRecommendation(rec)}
+                          disabled={recLoading || addingId === rec.youtubeId}
+                          className={`px-2 py-1 rounded text-xs text-white transition ${
+                            recLoading || addingId === rec.youtubeId
+                              ? "bg-gray-400 cursor-not-allowed"
+                              : "bg-purple-600 hover:bg-purple-700"
+                          }`}
+                        >
+                          {addingId === rec.youtubeId ? "✓" : "+"}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {isLiveJoined && (
           <div
