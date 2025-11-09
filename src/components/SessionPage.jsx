@@ -14,6 +14,7 @@ const SessionPage = () => {
   const playerRef = useRef(null);
   const socketRef = useRef(null);
   const syncIntervalRef = useRef(null);
+  const searchDebounceRef = useRef(null);
 
   const [session, setSession] = useState(null);
   const [queue, setQueue] = useState([]);
@@ -71,6 +72,27 @@ const SessionPage = () => {
     };
   };
 
+  // Hilfsfunktion: fügt Titel + Thumbnail anhand videoCache hinzu
+const enrichQueueItem = (item) => {
+  if (item.item_type === "pause") {
+    return {
+      ...item,
+      youtubeId: null,
+      title: item.description || "Pause",
+      thumbnail: null,
+    };
+  }
+
+  const cacheEntry = videoCache.find(c => c.youtubeId === item.fk_video_id);
+  return {
+    ...item,
+    youtubeId: cacheEntry?.youtubeId || item.fk_video_id,
+    title: cacheEntry?.title || "Unbekannt",
+    thumbnail: cacheEntry?.thumbnail || `https://i.ytimg.com/vi/${item.fk_video_id}/mqdefault.jpg`,
+  };
+};
+
+
   const loadSessionData = useCallback(async () => {
   try {
     const [sessRes, queueRes] = await Promise.all([
@@ -96,13 +118,14 @@ const SessionPage = () => {
         };
       }
 
-      const cacheEntry = videoCache.find(c => c.id === item.fk_video_id);
-      return {
-        ...item,
-        youtube_id: cacheEntry?.youtube_id || item.fk_video_id, // fallback
-        title: cacheEntry?.title || 'Unbekannt',
-        thumbnail: cacheEntry?.thumbnail || `https://i.ytimg.com/vi/${cacheEntry?.youtube_id || ''}/mqdefault.jpg`,
-      };
+      const cacheEntry = videoCache.find(c => c.youtubeId === item.fk_video_id);
+
+return {
+  ...item,
+  youtubeId: cacheEntry?.youtubeId || item.fk_video_id,
+  title: cacheEntry?.title || 'Unbekannt',
+  thumbnail: cacheEntry?.thumbnail || `https://i.ytimg.com/vi/${item.fk_video_id}/mqdefault.jpg`,
+};
     });
 
     setSession(sessionData);
@@ -290,23 +313,123 @@ const SessionPage = () => {
   }, [sessionId, token, guestToken, loadSessionData, isLiveJoined, isHost]);
 
   // === CACHE LADEN ===
+// === CACHE LADEN (außerhalb von useEffect!) ===
+const loadCache = useCallback(async () => {
+  try {
+    const res = await axios.get("http://localhost:4000/youtube-cache");
+    // NORMALISIERE: youtube_id → youtubeId
+    const normalized = res.data.map(item => ({
+      ...item,
+      youtubeId: item.youtube_id || item.youtubeId, // fallback für alte Daten
+      youtube_id: undefined // optional: altes Feld entfernen
+    }));
+    setVideoCache(normalized);
+    console.log(`[Cache] ${normalized.length} Einträge geladen`);
+  } catch (err) {
+    console.warn("[Cache] Laden fehlgeschlagen", err);
+  }
+}, []);
+
+// === useEffect: Cache beim Mount laden ===
 useEffect(() => {
-  const loadCache = async () => {
-    try {
-      const res = await axios.get("http://localhost:4000/youtube-cache");
-      setVideoCache(res.data);
-      console.log(`[Cache] ${res.data.length} Einträge geladen`);
-    } catch (err) {
-      console.warn("[Cache] Laden fehlgeschlagen", err);
-    }
-  };
+  loadCache(); // Jetzt ist loadCache im Scope!
 
-  loadCache();
-
-  // Optional: Alle 5 Minuten neu laden
   const interval = setInterval(loadCache, 5 * 60 * 1000);
   return () => clearInterval(interval);
-}, []);
+}, [loadCache]); // loadCache als Abhängigkeit
+
+// === LIVE-SUCHE: Sofort beim Tippen ===
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    searchDebounceRef.current = setTimeout(async () => {
+      const normQuery = normalize(query);
+      const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
+
+      try {
+        // 1. Cache-Suche
+        const matches = videoCache
+          .map((item) => {
+            const ratio = levenshteinRatio(item.title_norm, normQuery);
+            return { ...item, ratio };
+          })
+          .filter((item) => item.ratio > 85 || item.title_norm.includes(normQuery))
+          .sort((a, b) => b.ratio - a.ratio)
+          .slice(0, 5);
+
+        let results = [];
+
+        if (matches.length > 0) {
+          results = matches.map((m) => ({
+  id: { videoId: m.youtubeId }, // ← ÄNDERN!
+  snippet: {
+    title: m.title,
+    thumbnails: { default: { url: m.thumbnail } },
+  },
+}));
+        } else if (API_KEY) {
+          // 2. YouTube API
+          const res = await axios.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            {
+              params: {
+                part: "snippet",
+                type: "video",
+                maxResults: 5,
+                q: query,
+                key: API_KEY,
+              },
+            }
+          );
+          results = res.data.items || [];
+
+          // 3. Cache speichern
+          for (const item of results) {
+            const youtubeId = item.id.videoId;
+            const title = item.snippet.title;
+            const thumbnail =
+              item.snippet.thumbnails.medium?.url ||
+              `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
+            const norm = normalize(title);
+
+            await axios.post(
+              "http://localhost:4000/youtube-cache",
+              { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
+              { headers: getAuthHeaders() }
+            );
+          }
+          await loadCache();
+        }
+
+        setSearchResults(results);
+
+        // KI-Vorschläge
+        if (sessionLive && isLiveJoined) {
+          setAiLoading(true);
+          try {
+            const res = await axios.post(
+              `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+              { query },
+              { headers: getAuthHeaders() }
+            );
+            setAiSuggestions(res.data || []);
+          } catch (err) {
+            console.warn("AI suggestion failed", err);
+          } finally {
+            setAiLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error("[Search Error]", err);
+      }
+    }, 300);
+  }, [searchQuery, videoCache, sessionLive, isLiveJoined, sessionId, loadCache]);
 
   // === YouTube Player API laden ===
   useEffect(() => {
@@ -363,7 +486,7 @@ useEffect(() => {
   const progress = Math.max(0, elapsed);
 
   // === RICHTIG: Suche in queue nach youtube_id ===
-  const queueItem = queue.find(i => i.youtube_id === current_video_id);
+  const queueItem = queue.find(i => i.youtubeId === current_video_id);
 
   setCurrentSong({
     youtube_id: current_video_id,
@@ -544,12 +667,12 @@ const levenshteinRatio = (s1, s2) => {
 
     if (matches.length > 0) {
       results = matches.map(m => ({
-        id: { videoId: m.youtubeId },
-        snippet: {
-          title: m.title,
-          thumbnails: { default: { url: m.thumbnail } }
-        }
-      }));
+    id: { videoId: m.youtubeId }, // ← RICHTIG!
+    snippet: {
+      title: m.title,
+      thumbnails: { default: { url: m.thumbnail } }
+    }
+  }));
       console.log(`[Cache] Found ${matches.length} results for "${query}"`);
     } else {
       console.log(`[YouTube] Searching for "${query}"`);
@@ -573,10 +696,15 @@ const levenshteinRatio = (s1, s2) => {
         const norm = normalize(title);
 
         await axios.post(
-          "http://localhost:4000/youtube-cache",
-          { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
-          { headers: getAuthHeaders() }
-        );
+  "http://localhost:4000/youtube-cache",
+  { 
+    title_norm: norm, 
+    title, 
+    youtubeId: youtubeId,  // ← ÄNDERN!
+    thumbnail 
+  },
+  { headers: getAuthHeaders() }
+);
       }
 
       // Cache neu laden
@@ -624,7 +752,7 @@ const levenshteinRatio = (s1, s2) => {
     );
     setSearchResults([]);
     setSearchQuery("");
-    loadSessionData();
+    await loadSessionData();
   } catch (err) {
     console.error("Proposal failed:", err.response?.data || err.message);
     alert("Fehler beim Vorschlag: " + (err.response?.data?.error || "Unbekannt"));
@@ -653,24 +781,28 @@ const levenshteinRatio = (s1, s2) => {
   // === ADD RECOMMENDED SONG ===
   // === ADD RECOMMENDED SONG (mit Feedback + Stabilität) ===
   const addRecommendation = async (rec) => {
-    if (addingId === rec.youtubeId) return;
-    setAddingId(rec.youtubeId);
-    try {
-      await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
-        { youtubeId: rec.youtubeId, title: rec.title },
-        { headers: getAuthHeaders() },
-      );
-      loadSessionData();
-      setRecommendations((prev) =>
-        prev.filter((r) => r.youtubeId !== rec.youtubeId),
-      );
-    } catch (e) {
-      alert("Fehler beim Hinzufügen");
-    } finally {
-      setAddingId(null);
-    }
-  };
+  if (addingId === rec.youtubeId) return;
+  setAddingId(rec.youtubeId);
+
+  try {
+    const { data: newItem } = await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
+      { youtubeId: rec.youtubeId, title: rec.title },
+      { headers: getAuthHeaders() },
+    );
+
+    const enriched = enrichQueueItem(newItem);
+    setQueue(prev => [...prev, enriched]);
+
+    // Empfehlung entfernen
+    setRecommendations(prev => prev.filter(r => r.youtubeId !== rec.youtubeId));
+  } catch (e) {
+    alert("Fehler beim Hinzufügen");
+  } finally {
+    setAddingId(null);
+  }
+};
+
 
   // === DELETE QUEUE ITEM ===
   const deleteQueueItem = async (itemId) => {
@@ -681,7 +813,7 @@ const levenshteinRatio = (s1, s2) => {
         `http://localhost:4000/sessions/${sessionId}/queue/${itemId}`,
         { headers: getAuthHeaders() },
       );
-      loadSessionData(); // Queue neu laden
+      setQueue(prev => prev.filter(item => item.id !== itemId));
     } catch (err) {
       console.error("Delete failed", err);
       alert("Fehler beim Löschen");
@@ -879,42 +1011,82 @@ const levenshteinRatio = (s1, s2) => {
           </div>
         )}
 
+          {/* YouTube Suche + KI-Vorschläge */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">YouTube Suche</h2>
-          <div className="flex gap-3 mb-3">
-            <input
-              type="text"
-              placeholder="Suchen"
-              className="flex-1 border rounded p-2"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <button
-              onClick={searchYouTube}
-              className="bg-green-600 text-white px-4 rounded"
-            >
-              Suchen
-            </button>
-          </div>
-          {searchResults.map((video) => (
-            <div
-              key={video.id.videoId}
-              className="flex items-center gap-3 mb-2 p-2 bg-gray-50 rounded"
-            >
-              <img
-                src={video.snippet.thumbnails.default.url}
-                alt=""
-                className="w-12 h-12 rounded"
-              />
-              <div className="flex-1 text-sm">{video.snippet.title}</div>
-              <button
-                onClick={() => proposeSong(video)}
-                className="bg-blue-600 text-white px-2 rounded text-xs disabled:opacity-50"
-              >
-                Vorschlagen
-              </button>
+          <input
+            type="text"
+            placeholder="Song suchen..."
+            className="w-full border rounded p-2 mb-3"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+
+          {/* Suchergebnisse */}
+          {searchResults.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {searchResults.map((video) => (
+                <div
+                  key={video.id.videoId}
+                  className="flex items-center gap-3 p-2 bg-gray-50 rounded hover:bg-gray-100 transition"
+                >
+                  <img
+                    src={video.snippet.thumbnails.default.url}
+                    alt=""
+                    className="w-12 h-12 rounded"
+                  />
+                  <div className="flex-1 text-sm truncate">{video.snippet.title}</div>
+                  <button
+                    onClick={() => proposeSong(video)}
+                    className="bg-blue-600 text-white px-3 py-1 rounded text-xs"
+                  >
+                    Vorschlagen
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {/* KI-Vorschläge direkt darunter */}
+          {aiLoading && (
+            <p className="text-sm text-gray-500">KI-Vorschläge werden geladen…</p>
+          )}
+          {!aiLoading && aiSuggestions.length > 0 && (
+            <div className="mt-4 bg-gradient-to-r from-indigo-50 to-purple-50 p-3 rounded-lg">
+              <h3 className="text-lg font-semibold text-purple-700 mb-2">KI-Songvorschläge</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {aiSuggestions.map((sugg) => (
+                  <div
+                    key={sugg.youtubeId}
+                    className="flex items-center gap-3 bg-white rounded p-2 shadow-sm hover:shadow"
+                  >
+                    <img
+                      src={
+                        sugg.thumbnail ||
+                        `https://i.ytimg.com/vi/${sugg.youtubeId}/default.jpg`
+                      }
+                      alt={sugg.title}
+                      className="w-12 h-12 rounded"
+                    />
+                    <div className="flex-1 text-sm font-medium truncate">
+                      {sugg.title}
+                    </div>
+                    <button
+                      onClick={() =>
+                        addRecommendation({
+                          youtubeId: sugg.youtubeId,
+                          title: sugg.title,
+                        })
+                      }
+                      className="bg-purple-600 text-white px-2 py-1 rounded text-xs"
+                    >
+                      +
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* === AI RECOMMENDATIONS UI (STABIL + LANGE TITEL FIX) === */}
