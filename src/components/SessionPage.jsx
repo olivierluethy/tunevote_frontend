@@ -230,34 +230,36 @@ const loadCache = useCallback(async () => {
 // === AI RECOMMENDATIONS FETCH ===
 // === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
 useEffect(() => {
-  if (!isLiveJoined || !currentSong?.videoId) {
-    setRecommendations([]);
-    return;
-  }
-
-  const controller = new AbortController();
-
-  const fetchRec = async () => {
-    setRecLoading(true);
-    try {
-      const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/recommendations`,
-        { headers: getAuthHeaders(), signal: controller.signal },
-      );
-      setRecommendations(res.data);
-    } catch (e) {
-      if (!axios.isCancel(e)) console.warn("rec fetch error", e);
-    } finally {
-      setRecLoading(false);
+    if (
+      !isLiveJoined ||
+      queue.filter((i) => i.item_type === "music" && !i.played).length < 2
+    ) {
+      setRecommendations([]);
+      return;
     }
-  };
 
-  fetchRec(); // direkt ausführen, kein setTimeout
+    const controller = new AbortController();
+    const fetchRec = async () => {
+      setRecLoading(true);
+      try {
+        const res = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
+          { headers: getAuthHeaders(), signal: controller.signal },
+        );
+        setRecommendations(res.data);
+      } catch (e) {
+        if (!axios.isCancel(e)) console.warn("rec fetch error", e);
+      } finally {
+        setRecLoading(false);
+      }
+    };
 
-  return () => {
-    controller.abort();
-  };
-}, [isLiveJoined, currentSong, sessionId]);
+    const timer = setTimeout(fetchRec, 800); // debounce
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isLiveJoined, queue, sessionId]);
 
 const addRecommendation = async (rec) => {
   if (addingId === rec.youtubeId) return;
@@ -989,12 +991,74 @@ useEffect(() => {
             </div>
           )}
 
-          {/* KI-Vorschläge direkt darunter */}
-          {aiLoading && (
-            <p className="text-sm text-gray-500">
-              KI-Vorschläge werden geladen…
-            </p>
-          )}
+          {/* === AI RECOMMENDATIONS UI (STABIL + LANGE TITEL FIX) === */}
+{isLiveJoined && (
+  <div className="mt-6">
+    <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
+      <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+        AI-Vorschläge
+      </h2>
+
+      {recLoading ? (
+        <p className="text-sm text-gray-600">Lade Vorschläge…</p>
+      ) : recommendations.length === 0 ? (
+        <p className="text-sm text-gray-500 italic">
+          Keine Vorschläge verfügbar
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {recommendations
+            .filter((rec) => rec.youtubeId && rec.title)
+            .map((rec) => (
+              <div
+                key={rec.youtubeId}
+                className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 group"
+              >
+                {/* Thumbnail */}
+                <img
+                  src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
+                  alt={rec.title}
+                  className="w-12 h-12 rounded flex-shrink-0 object-cover"
+                  onError={(e) => {
+                    e.target.src = "/fallback-thumbnail.png";
+                  }}
+                />
+
+                {/* Titel – darf schrumpfen, max. 2 Zeilen */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm text-gray-800 line-clamp-2 leading-tight">
+                    {rec.title}
+                  </p>
+                </div>
+
+                {/* Plus-Button – immer sichtbar und klickbar */}
+                <button
+                  onClick={() => addRecommendation(rec)}
+                  disabled={recLoading || addingId === rec.youtubeId}
+                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-lg font-bold transition-all duration-200
+                    ${recLoading || addingId === rec.youtubeId
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-700 hover:scale-110 shadow-md"
+                    }`}
+                  title="Zur Playlist hinzufügen"
+                >
+                  {addingId === rec.youtubeId ? "✓" : "+"}
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+        {/* === NEU: KI-Vorschläge unter der Suche === */}
+        {aiLoading && (
+          <p className="text-sm text-gray-500 mt-2">
+            KI-Vorschläge werden geladen…
+          </p>
+        )}
+
           {!aiLoading && aiSuggestions.length > 0 && (
             <div className="mt-4 bg-gradient-to-r from-indigo-50 to-purple-50 p-3 rounded-lg">
               <h3 className="text-lg font-semibold text-purple-700 mb-2">
@@ -1124,61 +1188,6 @@ useEffect(() => {
             })
           )}
         </div>
-
-        {/* === AI RECOMMENDATIONS UI (STABIL) === */}
-        {isLiveJoined && (
-          <div className="mt-6">
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                AI-Vorschläge
-              </h2>
-
-              {recLoading ? (
-                <p className="text-sm text-gray-600">Lade Vorschläge…</p>
-              ) : recommendations.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">
-                  Keine Vorschläge verfügbar
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {recommendations
-                    .filter((rec) => rec.youtubeId && rec.title)
-                    .map((rec) => (
-                      <div
-                        key={rec.youtubeId}
-                        className="flex items-center gap-2 p-2 bg-white rounded shadow-sm hover:shadow transition"
-                      >
-                        <img
-                          src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
-                          alt={rec.title}
-                          className="w-12 h-12 rounded"
-                          onError={(e) => {
-                            e.target.src = "/fallback-thumbnail.png";
-                          }}
-                        />
-                        <div className="flex-1 text-sm">
-                          <div className="font-medium truncate">
-                            {rec.title}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => addRecommendation(rec)}
-                          disabled={recLoading || addingId === rec.youtubeId}
-                          className={`px-2 py-1 rounded text-xs text-white transition ${
-                            recLoading || addingId === rec.youtubeId
-                              ? "bg-gray-400 cursor-not-allowed"
-                              : "bg-purple-600 hover:bg-purple-700"
-                          }`}
-                        >
-                          {addingId === rec.youtubeId ? "✓" : "+"}
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {isLiveJoined && (
           <div
