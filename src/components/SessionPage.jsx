@@ -16,12 +16,21 @@ const SessionPage = () => {
   const syncIntervalRef = useRef(null);
 
   const [session, setSession] = useState(null);
+  const [proposals, setProposals] = useState([]);
   const [queue, setQueue] = useState([]);
   const [currentSong, setCurrentSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
   const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
+
+  // Voting
+  const [votingRound, setVotingRound] = useState(null);
+  const [remainingTime, setRemainingTime] = useState(0);
+  const [connectedCount, setConnectedCount] = useState(0);
+  const [votesCast, setVotesCast] = useState(0);
+
+  const hasInteracted = useRef(false); // Wichtig: Autoplay nur nach Interaktion
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState([]);
@@ -36,9 +45,6 @@ const SessionPage = () => {
   const pauseTimerRef = useRef(null);
 
   const [isHost, setIsHost] = useState(false);
-  const [nickname, setNickname] = useState(
-    () => localStorage.getItem("guestName") || "Gast",
-  );
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [volume, setVolume] = useState(50);
   const [isMutedForMe, setIsMutedForMe] = useState(
@@ -55,6 +61,19 @@ const SessionPage = () => {
   const token = localStorage.getItem("token");
   const guestToken = localStorage.getItem("guestToken");
   const userId = localStorage.getItem("userId");
+  const username = localStorage.getItem("username") || "User";
+
+  // Klare Unterscheidung
+  const isGuest = !token && guestToken;
+  const isLoggedIn = !!token;
+  const displayName = isGuest
+    ? localStorage.getItem("guestName") || "Gast"
+    : username;
+
+  // nickname nur für Gäste
+  const [nickname, setNickname] = useState(
+    isGuest ? localStorage.getItem("guestName") || "Gast" : "",
+  );
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
@@ -70,6 +89,55 @@ const SessionPage = () => {
     };
   };
 
+  const loadProposals = useCallback(async () => {
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
+        { headers: getAuthHeaders() },
+      );
+      setProposals(res.data || []);
+    } catch (err) {
+      console.error("Failed to load proposals:", err);
+    }
+  }, [sessionId]);
+
+  const voteSong = async (songId) => {
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+      await loadProposals(); // Voting-Bereich aktualisieren
+      await loadSessionData(); // Queue aktualisieren
+    } catch (err) {
+      console.error("Voting error:", err);
+      alert("Fehler beim Abstimmen");
+    }
+  };
+
+  const ensureGuestToken = async () => {
+    let guestToken = localStorage.getItem("guestToken");
+    const nickname = localStorage.getItem("guestName") || "Gast";
+
+    // Wenn noch kein Token vorhanden, neuen Gast anlegen
+    if (!guestToken) {
+      try {
+        const { data } = await axios.post("http://localhost:4000/guest/join", {
+          nickname,
+        });
+        guestToken = data.guestToken;
+        localStorage.setItem("guestToken", guestToken);
+        localStorage.setItem("guestName", data.nickname);
+        console.log("New guest created:", data);
+      } catch (err) {
+        console.error("Guest creation failed:", err);
+      }
+    }
+
+    return guestToken;
+  };
+
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
@@ -83,7 +151,7 @@ const SessionPage = () => {
 
       setSession(sessRes.data);
       setQueue(queueRes.data || []);
-      setIsHost(sessRes.data.hostId === Number(userId));
+      setIsHost(isLoggedIn && sessRes.data.hostId === Number(userId));
       setSessionLive(!!sessRes.data.is_live);
 
       // Gast: Kein userId → isHost = false → korrekt
@@ -100,12 +168,18 @@ const SessionPage = () => {
   useEffect(() => {
     if (token || guestToken) {
       loadSessionData();
-      const interval = setInterval(loadSessionData, 10000);
+      loadProposals(); // ← NEU: Proposals laden
+
+      const interval = setInterval(() => {
+        loadSessionData();
+        loadProposals(); // ← NEU: Alle 10s aktualisieren
+      }, 10000);
+
       return () => clearInterval(interval);
     } else {
       setShowGuestModal(true);
     }
-  }, [loadSessionData, token, guestToken]);
+  }, [loadSessionData, loadProposals, token, guestToken]); // ← loadProposals hinzugefügt
 
   // === Socket.IO ===
   useEffect(() => {
@@ -120,6 +194,9 @@ const SessionPage = () => {
       console.warn("Socket error", err),
     );
     socketRef.current.on("queue_updated", loadSessionData);
+    socketRef.current.on("proposals_updated", () => {
+      loadProposals();
+    });
     socketRef.current.on("session_started", (data) => {
       console.log("Session started broadcast:", data);
       setSessionLive(true);
@@ -212,33 +289,31 @@ const SessionPage = () => {
 
   // === CACHE LADEN (außerhalb von useEffect!) ===
   // === CACHE LADEN ===
-const loadCache = useCallback(async () => {
-  try {
-    const res = await axios.get("http://localhost:4000/youtube-cache");
-    const normalized = res.data.map((item) => ({
-      ...item,
-      youtubeId: item.youtube_id || item.youtubeId,
-      youtube_id: undefined,
-    }));
-    setVideoCache(normalized);
-    console.log(`[Cache] ${normalized.length} Einträge geladen`);
-  } catch (err) {
-    console.warn("[Cache] Laden fehlgeschlagen", err);
-  }
-}, []);
+  const loadCache = useCallback(async () => {
+    try {
+      const res = await axios.get("http://localhost:4000/youtube-cache");
+      const normalized = res.data.map((item) => ({
+        ...item,
+        youtubeId: item.youtube_id || item.youtubeId,
+        youtube_id: undefined,
+      }));
+      setVideoCache(normalized);
+      console.log(`[Cache] ${normalized.length} Einträge geladen`);
+    } catch (err) {
+      console.warn("[Cache] Laden fehlgeschlagen", err);
+    }
+  }, []);
 
-// === AI RECOMMENDATIONS FETCH ===
-// === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
-useEffect(() => {
-    if (
-      !isLiveJoined ||
-      queue.filter((i) => i.item_type === "music" && !i.played).length < 2
-    ) {
+  // === AI RECOMMENDATIONS FETCH ===
+  // === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
+  useEffect(() => {
+    if (!isLiveJoined || !currentSong?.videoId) {
       setRecommendations([]);
       return;
     }
 
     const controller = new AbortController();
+
     const fetchRec = async () => {
       setRecLoading(true);
       try {
@@ -254,43 +329,45 @@ useEffect(() => {
       }
     };
 
-    const timer = setTimeout(fetchRec, 800); // debounce
+    fetchRec(); // direkt ausführen, kein setTimeout
+
     return () => {
-      clearTimeout(timer);
       controller.abort();
     };
-  }, [isLiveJoined, queue, sessionId]);
+  }, [isLiveJoined, currentSong, sessionId]);
 
-const addRecommendation = async (rec) => {
-  if (addingId === rec.youtubeId) return;
-  setAddingId(rec.youtubeId);
+  const addRecommendation = async (rec) => {
+    if (addingId === rec.youtubeId) return;
+    setAddingId(rec.youtubeId);
 
-  try {
-    const { data: newItem } = await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
-      { youtubeId: rec.youtubeId },
-      { headers: getAuthHeaders() },
-    );
+    try {
+      const { data: newItem } = await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
+        { youtubeId: rec.youtubeId },
+        { headers: getAuthHeaders() },
+      );
 
-    // Direkt in die Queue einfügen
-    setQueue(prev => [...prev, newItem]);
+      // Direkt in die Queue einfügen
+      setQueue((prev) => [...prev, newItem]);
 
-    // Empfehlung entfernen
-    setRecommendations(prev => prev.filter(r => r.youtubeId !== rec.youtubeId));
-  } catch (e) {
-    console.error("Add recommendation error (frontend):", e);
-    alert("Fehler beim Hinzufügen");
-  } finally {
-    setAddingId(null);
-  }
-};
+      // Empfehlung entfernen
+      setRecommendations((prev) =>
+        prev.filter((r) => r.youtubeId !== rec.youtubeId),
+      );
+    } catch (e) {
+      console.error("Add recommendation error (frontend):", e);
+      alert("Fehler beim Hinzufügen");
+    } finally {
+      setAddingId(null);
+    }
+  };
 
-// ← NEU: Cache beim Mount laden
-useEffect(() => {
-  loadCache();
-  const interval = setInterval(loadCache, 5 * 60 * 1000);
-  return () => clearInterval(interval);
-}, [loadCache]);
+  // ← NEU: Cache beim Mount laden
+  useEffect(() => {
+    loadCache();
+    const interval = setInterval(loadCache, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadCache]);
 
   // === LIVE-SUCHE: Sofort beim Tippen ===
   useEffect(() => {
@@ -467,17 +544,20 @@ useEffect(() => {
     setIsLiveJoined(true);
 
     try {
-      // Join mit Auth (Gast oder eingeloggt)
+      // 🟩 1. Stelle sicher, dass Gast einen gültigen Token hat
+      await ensureGuestToken();
+
+      // 🟩 2. Join Live Session mit Auth-Header (User oder Gast)
       await axios.post(
         `http://localhost:4000/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
 
-      // Sync-Daten holen
+      // 🟩 3. Playback-Sync-Daten abrufen
       const { data } = await axios.get(
         `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-        { headers: getAuthHeaders() }, // WICHTIG: Auch hier!
+        { headers: getAuthHeaders() },
       );
 
       if (data.current_video_id && data.video_start_time) {
@@ -487,9 +567,10 @@ useEffect(() => {
       console.error("Join Live failed", err);
       setIsLiveJoined(false);
       alert("Fehler beim Beitreten zur Live-Session");
+      return; // Falls Fehler, nicht weitermachen
     }
 
-    // Regelmäßiger Sync
+    // 🟩 4. Regelmäßiger Playback-Sync alle 10 Sekunden
     syncIntervalRef.current = setInterval(async () => {
       if (!isLiveJoined) return;
       try {
@@ -497,6 +578,7 @@ useEffect(() => {
           `http://localhost:4000/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() },
         );
+
         if (data.current_video_id && data.video_start_time) {
           const elapsed = (Date.now() - data.video_start_time) / 1000;
           const current = playerRef.current?.getCurrentTime() || 0;
@@ -504,7 +586,9 @@ useEffect(() => {
             playerRef.current?.seekTo(elapsed, true);
           }
         }
-      } catch {}
+      } catch (e) {
+        console.warn("Sync failed:", e.message);
+      }
     }, 10000);
   };
 
@@ -715,36 +799,52 @@ useEffect(() => {
     }
   };
 
- const proposeSong = async (video) => {
-  try {
-    const videoId = video.id?.videoId || video.youtubeId;
-    const title = video.snippet?.title || video.title;
-    const thumbnail =
-      video.snippet?.thumbnails?.medium?.url ||
-      video.snippet?.thumbnails?.default?.url ||
-      video.thumbnail ||
-      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+  const proposeSong = async (video) => {
+    try {
+      const videoId = video.id?.videoId || video.youtubeId;
+      const title = video.snippet?.title || video.title;
+      const thumbnail =
+        video.snippet?.thumbnails?.medium?.url ||
+        video.snippet?.thumbnails?.default?.url ||
+        video.thumbnail ||
+        `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
 
-    if (!videoId || !title) {
-      alert("Fehler: Video-ID oder Titel fehlt");
-      return;
+      if (!videoId || !title) {
+        alert("Fehler: Video-ID oder Titel fehlt");
+        return;
+      }
+
+      await axios
+        .post(
+          `http://localhost:4000/sessions/${sessionId}/proposals`,
+          { videoId, title, thumbnail },
+          { headers: getAuthHeaders() },
+        )
+        .then((res) => {
+          if (res.data.status === "suggested") {
+            //alert("🎵 Song wurde zur Abstimmung vorgeschlagen!");
+          } else {
+            // alert("✅ Song wurde direkt zur Wiedergabeliste hinzugefügt!");
+          }
+        });
+
+      // Danach wieder UI zurücksetzen
+      setSearchQuery("");
+      setSearchResults([]);
+      setAiSuggestions([]);
+      await loadProposals(); // ← NEU: Voting-Bereich aktualisieren
+      await loadSessionData(); // ← Queue aktualisieren
+    } catch (err) {
+      console.error(err);
+      const msg =
+        err.response?.data?.message ===
+        "Maximal 5 Songs pro Voting-Runde erlaubt."
+          ? "🚫 Es können maximal 5 Songs pro Voting-Runde vorgeschlagen werden."
+          : "Fehler beim Vorschlagen: " +
+            (err.response?.data?.message || "Unbekannter Fehler");
+      alert(msg);
     }
-
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/proposals`,
-      { videoId, title, thumbnail },
-      { headers: getAuthHeaders() }
-    );
-
-    setSearchQuery("");
-    setSearchResults([]);
-    setAiSuggestions([]);
-    loadSessionData();
-  } catch (err) {
-    console.error(err);
-    alert("Fehler beim Vorschlagen: " + (err.response?.data?.message || "Unbekannter Fehler"));
-  }
-};
+  };
 
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
@@ -822,8 +922,8 @@ useEffect(() => {
             >
               ← Zurück
             </button>
-            {!isHost && (
-              <div className="text-sm text-gray-500">Gast: {nickname}</div>
+            {isGuest && (
+              <div className="text-sm text-gray-500">Gast: {displayName}</div>
             )}
           </div>
         </div>
@@ -991,74 +1091,12 @@ useEffect(() => {
             </div>
           )}
 
-          {/* === AI RECOMMENDATIONS UI (STABIL + LANGE TITEL FIX) === */}
-{isLiveJoined && (
-  <div className="mt-6">
-    <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
-      <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-        AI-Vorschläge
-      </h2>
-
-      {recLoading ? (
-        <p className="text-sm text-gray-600">Lade Vorschläge…</p>
-      ) : recommendations.length === 0 ? (
-        <p className="text-sm text-gray-500 italic">
-          Keine Vorschläge verfügbar
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {recommendations
-            .filter((rec) => rec.youtubeId && rec.title)
-            .map((rec) => (
-              <div
-                key={rec.youtubeId}
-                className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 group"
-              >
-                {/* Thumbnail */}
-                <img
-                  src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
-                  alt={rec.title}
-                  className="w-12 h-12 rounded flex-shrink-0 object-cover"
-                  onError={(e) => {
-                    e.target.src = "/fallback-thumbnail.png";
-                  }}
-                />
-
-                {/* Titel – darf schrumpfen, max. 2 Zeilen */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-800 line-clamp-2 leading-tight">
-                    {rec.title}
-                  </p>
-                </div>
-
-                {/* Plus-Button – immer sichtbar und klickbar */}
-                <button
-                  onClick={() => addRecommendation(rec)}
-                  disabled={recLoading || addingId === rec.youtubeId}
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-lg font-bold transition-all duration-200
-                    ${recLoading || addingId === rec.youtubeId
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-purple-600 hover:bg-purple-700 hover:scale-110 shadow-md"
-                    }`}
-                  title="Zur Playlist hinzufügen"
-                >
-                  {addingId === rec.youtubeId ? "✓" : "+"}
-                </button>
-              </div>
-            ))}
-        </div>
-      )}
-    </div>
-  </div>
-)}
-
-        {/* === NEU: KI-Vorschläge unter der Suche === */}
-        {aiLoading && (
-          <p className="text-sm text-gray-500 mt-2">
-            KI-Vorschläge werden geladen…
-          </p>
-        )}
-
+          {/* KI-Vorschläge direkt darunter */}
+          {aiLoading && (
+            <p className="text-sm text-gray-500">
+              KI-Vorschläge werden geladen…
+            </p>
+          )}
           {!aiLoading && aiSuggestions.length > 0 && (
             <div className="mt-4 bg-gradient-to-r from-indigo-50 to-purple-50 p-3 rounded-lg">
               <h3 className="text-lg font-semibold text-purple-700 mb-2">
@@ -1066,35 +1104,35 @@ useEffect(() => {
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {aiSuggestions.map((sugg) => (
-  <div
-    key={sugg.youtubeId}
-    className="flex items-center gap-3 bg-white rounded p-2 shadow-sm hover:shadow"
-  >
-    <img
-      src={
-        sugg.thumbnail ||
-        `https://i.ytimg.com/vi/${sugg.youtubeId}/default.jpg`
-      }
-      alt={sugg.title}
-      className="w-12 h-12 rounded"
-    />
-    <div className="flex-1 text-sm font-medium truncate">
-      {sugg.title}
-    </div>
-    <button
-      onClick={() =>
-        proposeSong({
-          youtubeId: sugg.youtubeId,
-          title: sugg.title,
-          thumbnail: sugg.thumbnail,
-        })
-      }
-      className="bg-purple-600 text-white px-2 py-1 rounded text-xs"
-    >
-      Vorschlagen
-    </button>
-  </div>
-))}
+                  <div
+                    key={sugg.youtubeId}
+                    className="flex items-center gap-3 bg-white rounded p-2 shadow-sm hover:shadow"
+                  >
+                    <img
+                      src={
+                        sugg.thumbnail ||
+                        `https://i.ytimg.com/vi/${sugg.youtubeId}/default.jpg`
+                      }
+                      alt={sugg.title}
+                      className="w-12 h-12 rounded"
+                    />
+                    <div className="flex-1 text-sm font-medium truncate">
+                      {sugg.title}
+                    </div>
+                    <button
+                      onClick={() =>
+                        proposeSong({
+                          youtubeId: sugg.youtubeId,
+                          title: sugg.title,
+                          thumbnail: sugg.thumbnail,
+                        })
+                      }
+                      className="bg-purple-600 text-white px-2 py-1 rounded text-xs"
+                    >
+                      Vorschlagen
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1143,6 +1181,58 @@ useEffect(() => {
           </div>
         </div>
 
+        {/* === Voting Round (Songs mit status = suggested) === */}
+        <div className="bg-white p-4 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-semibold mb-3">🗳 Abstimmung</h2>
+
+          {proposals.length === 0 ? (
+            <p className="text-gray-500">
+              Keine vorgeschlagenen Songs aktuell.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {proposals
+                .filter((p) => p.status === "suggested")
+                .map((song) => (
+                  <div
+                    key={song.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={song.thumbnail}
+                        alt={song.title}
+                        className="w-12 h-12 rounded"
+                      />
+                      <div>
+                        <p className="font-semibold">{song.title}</p>
+                        <p className="text-sm text-gray-500">
+                          Vorgeschlagen von {song.addedBy}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => voteSong(song.id)}
+                        className={`px-3 py-1 rounded text-white ${
+                          song.userHasVoted
+                            ? "bg-green-600"
+                            : "bg-gray-400 hover:bg-green-500"
+                        }`}
+                      >
+                        👍 {song.votes}
+                      </button>
+
+                      <span className="text-gray-700">
+                        {song.votes || 0} Stimmen
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
         <div className="bg-white p-4 rounded-lg shadow">
           <h2 className="text-xl font-semibold mb-3">Queue</h2>
           {queue.length === 0 ? (
@@ -1188,6 +1278,61 @@ useEffect(() => {
             })
           )}
         </div>
+
+        {/* === AI RECOMMENDATIONS UI (STABIL) === */}
+        {isLiveJoined && (
+          <div className="mt-6">
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+                AI-Vorschläge
+              </h2>
+
+              {recLoading ? (
+                <p className="text-sm text-gray-600">Lade Vorschläge…</p>
+              ) : recommendations.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">
+                  Keine Vorschläge verfügbar
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recommendations
+                    .filter((rec) => rec.youtubeId && rec.title)
+                    .map((rec) => (
+                      <div
+                        key={rec.youtubeId}
+                        className="flex items-center gap-2 p-2 bg-white rounded shadow-sm hover:shadow transition"
+                      >
+                        <img
+                          src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
+                          alt={rec.title}
+                          className="w-12 h-12 rounded"
+                          onError={(e) => {
+                            e.target.src = "/fallback-thumbnail.png";
+                          }}
+                        />
+                        <div className="flex-1 text-sm">
+                          <div className="font-medium truncate">
+                            {rec.title}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => addRecommendation(rec)}
+                          disabled={recLoading || addingId === rec.youtubeId}
+                          className={`px-2 py-1 rounded text-xs text-white transition ${
+                            recLoading || addingId === rec.youtubeId
+                              ? "bg-gray-400 cursor-not-allowed"
+                              : "bg-purple-600 hover:bg-purple-700"
+                          }`}
+                        >
+                          {addingId === rec.youtubeId ? "✓" : "+"}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {isLiveJoined && (
           <div
