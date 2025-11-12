@@ -1,5 +1,5 @@
 // src/pages/Register.jsx
-import React, { useState } from "react";
+import React, { useState , useEffect } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { User, Mail, Lock, Music, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
@@ -11,6 +11,11 @@ export default function Register() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // 🧹 Wird beim Betreten der Login-Seite ausgeführt
+    useEffect(() => {
+      localStorage.clear();
+    }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
