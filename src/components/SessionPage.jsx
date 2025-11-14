@@ -117,26 +117,25 @@ const SessionPage = () => {
   };
 
   const ensureGuestToken = async () => {
-    let guestToken = localStorage.getItem("guestToken");
-    const nickname = localStorage.getItem("guestName") || "Gast";
+  let guestToken = localStorage.getItem("guestToken");
+  const nickname = localStorage.getItem("guestName") || "Gast";
 
-    // Wenn noch kein Token vorhanden, neuen Gast anlegen
-    if (!guestToken) {
-      try {
-        const { data } = await axios.post("http://localhost:4000/guest/join", {
-          nickname,
-        });
-        guestToken = data.guestToken;
-        localStorage.setItem("guestToken", guestToken);
-        localStorage.setItem("guestName", data.nickname);
-        console.log("New guest created:", data);
-      } catch (err) {
-        console.error("Guest creation failed:", err);
-      }
+  if (!guestToken) {
+    try {
+      const { data } = await axios.post("http://localhost:4000/guest/join", {
+        nickname,
+      });
+      guestToken = data.guestToken;
+      localStorage.setItem("guestToken", guestToken);
+      localStorage.setItem("guestName", data.nickname);
+      console.log("New guest created:", data);
+    } catch (err) {
+      console.error("Guest creation failed:", err);
     }
+  }
 
-    return guestToken;
-  };
+  return guestToken;
+};
 
   const loadSessionData = useCallback(async () => {
     try {
@@ -540,80 +539,84 @@ const SessionPage = () => {
 
   // === Join Live ===
   const joinLive = async () => {
-    if (!sessionLive || isLiveJoined) return;
-    setIsLiveJoined(true);
+  if (!sessionLive || isLiveJoined) return;
+  setIsLiveJoined(true);
 
-    try {
-      // 🟩 1. Stelle sicher, dass Gast einen gültigen Token hat
+  try {
+    // NUR FÜR GÄSTE: Stelle sicher, dass ein gültiger Gast-Token existiert
+    if (isGuest) {
       await ensureGuestToken();
+    }
 
-      // 🟩 2. Join Live Session mit Auth-Header (User oder Gast)
-      await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/join-live`,
-        {},
-        { headers: getAuthHeaders() },
-      );
+    // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
+    await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/join-live`,
+      {},
+      { headers: getAuthHeaders() },
+    );
 
-      // 🟩 3. Playback-Sync-Daten abrufen
+    // Playback-Sync-Daten abrufen
+    const { data } = await axios.get(
+      `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+      { headers: getAuthHeaders() },
+    );
+
+    if (data.current_video_id && data.video_start_time) {
+      syncPlayback(data);
+    }
+  } catch (err) {
+    console.error("Join Live failed", err);
+    setIsLiveJoined(false);
+    alert("Fehler beim Beitreten zur Live-Session");
+    return;
+  }
+
+  // Regelmäßiger Sync
+  syncIntervalRef.current = setInterval(async () => {
+    if (!isLiveJoined) return;
+    try {
       const { data } = await axios.get(
         `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
       if (data.current_video_id && data.video_start_time) {
-        syncPlayback(data);
-      }
-    } catch (err) {
-      console.error("Join Live failed", err);
-      setIsLiveJoined(false);
-      alert("Fehler beim Beitreten zur Live-Session");
-      return; // Falls Fehler, nicht weitermachen
-    }
-
-    // 🟩 4. Regelmäßiger Playback-Sync alle 10 Sekunden
-    syncIntervalRef.current = setInterval(async () => {
-      if (!isLiveJoined) return;
-      try {
-        const { data } = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-          { headers: getAuthHeaders() },
-        );
-
-        if (data.current_video_id && data.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
-          const current = playerRef.current?.getCurrentTime() || 0;
-          if (Math.abs(current - elapsed) > 2) {
-            playerRef.current?.seekTo(elapsed, true);
-          }
+        const elapsed = (Date.now() - data.video_start_time) / 1000;
+        const current = playerRef.current?.getCurrentTime() || 0;
+        if (Math.abs(current - elapsed) > 2) {
+          playerRef.current?.seekTo(elapsed, true);
         }
-      } catch (e) {
-        console.warn("Sync failed:", e.message);
       }
-    }, 10000);
-  };
+    } catch (e) {
+      console.warn("Sync failed:", e.message);
+    }
+  }, 10000);
+};
 
   // === Leave Live ===
   const leaveLive = async () => {
-    setIsLiveJoined(false);
-    setCurrentSong(null); // Clear current song to hide "Now Playing" section
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    if (playerRef.current) {
-      playerRef.current.pauseVideo();
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-    try {
-      await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/leave-live`,
-        {},
-        { headers: getAuthHeaders() },
-      );
-      await loadSessionData(); // Reload to restore UI state
-    } catch (err) {
-      console.error("Leave failed", err);
-      await loadSessionData(); // Reload even on error to ensure UI consistency
-    }
-  };
+  // Sofort UI aktualisieren
+  setIsLiveJoined(false);
+  setCurrentSong(null);
+  if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+  if (playerRef.current) {
+    playerRef.current.pauseVideo();
+    // playerRef.current.destroy(); // Nicht zerstören → Wiederverwendung!
+  }
+
+  try {
+    await axios.post(
+      `http://localhost:4000/sessions/${sessionId}/leave-live`,
+      {},
+      { headers: getAuthHeaders() },
+    );
+  } catch (err) {
+    console.error("Leave failed", err);
+  } finally {
+    // Egal ob Fehler oder nicht: UI ist "nicht live"
+    await loadSessionData();
+  }
+};
 
   // === Start Session (Host) ===
   const startSession = async () => {
