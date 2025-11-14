@@ -529,15 +529,10 @@ const SessionPage = () => {
       `[createPlayer] Lade Song: videoId=${videoId}, Startzeit=${startSeconds}s, Autoplay=${shouldPlay}`,
     );
 
+    // Always destroy old player first if it exists (safety net)
     if (playerRef.current) {
-      playerRef.current.loadVideoById({ videoId, startSeconds });
-      if (shouldPlay) {
-        playerRef.current.playVideo();
-        console.log(
-          `[createPlayer] Bestehender Player spielt Song ab: videoId=${videoId}`,
-        );
-      }
-      return;
+      playerRef.current.destroy();
+      playerRef.current = null;
     }
 
     playerRef.current = new window.YT.Player("youtube-player", {
@@ -654,7 +649,8 @@ const SessionPage = () => {
     if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     if (playerRef.current) {
       playerRef.current.pauseVideo();
-      // playerRef.current.destroy(); // Nicht zerstören → Wiederverwendung!
+      playerRef.current.destroy(); // Uncomment and always destroy to prevent DOM errors
+      playerRef.current = null;
     }
 
     try {
@@ -666,7 +662,6 @@ const SessionPage = () => {
     } catch (err) {
       console.error("Leave failed", err);
     } finally {
-      // Egal ob Fehler oder nicht: UI ist "nicht live"
       await loadSessionData();
     }
   };
@@ -1194,147 +1189,6 @@ const SessionPage = () => {
           )}
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
-          <div className="flex gap-3 items-center">
-            <input
-              type="number"
-              min="5"
-              value={pauseDuration}
-              onChange={(e) => setPauseDuration(Number(e.target.value))}
-              className="border rounded p-2 w-20"
-            />
-            <span className="text-sm text-gray-600">Sekunden</span>
-            <input
-              type="text"
-              value={pauseDescription}
-              onChange={(e) => setPauseDescription(e.target.value)}
-              className="flex-1 border rounded p-2"
-              placeholder="Beschreibung (optional)"
-            />
-            <button
-              onClick={async () => {
-                try {
-                  await axios.post(
-                    `http://localhost:4000/sessions/${sessionId}/proposals`,
-                    {
-                      item_type: "pause",
-                      duration: pauseDuration,
-                      description: pauseDescription,
-                    },
-                    { headers: getAuthHeaders() },
-                  );
-                  loadSessionData(); // Queue neu laden
-                } catch (err) {
-                  console.error(err);
-                  alert("Fehler beim Hinzufügen der Pause");
-                }
-              }}
-              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
-            >
-              Pause hinzufügen
-            </button>
-          </div>
-        </div>
-
-        {/* === Voting Round (Songs mit status = suggested) === */}
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">🗳 Abstimmung</h2>
-
-          {proposals.length === 0 ? (
-            <p className="text-gray-500">
-              Keine vorgeschlagenen Songs aktuell.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {proposals
-                .filter((p) => p.status === "suggested")
-                .map((song) => (
-                  <div
-                    key={song.id}
-                    className="flex items-center justify-between p-2 bg-gray-50 rounded"
-                  >
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={song.thumbnail}
-                        alt={song.title}
-                        className="w-12 h-12 rounded"
-                      />
-                      <div>
-                        <p className="font-semibold">{song.title}</p>
-                        <p className="text-sm text-gray-500">
-                          Vorgeschlagen von {song.addedBy}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => voteSong(song.id)}
-                        className={`px-3 py-1 rounded text-white ${
-                          song.userHasVoted
-                            ? "bg-green-600"
-                            : "bg-gray-400 hover:bg-green-500"
-                        }`}
-                      >
-                        👍 {song.votes}
-                      </button>
-
-                      <span className="text-gray-700">
-                        {song.votes || 0} Stimmen
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-3">Queue</h2>
-          {queue.length === 0 ? (
-            <p className="text-gray-500">Leer</p>
-          ) : (
-            queue.map((item) => {
-              const isCurrent =
-                currentSong?.videoId === item.video_id && isLiveJoined;
-
-              return (
-                <div
-                  key={item.id}
-                  className={`flex items-center gap-3 mb-2 p-2 rounded transition-all ${
-                    isCurrent
-                      ? "bg-green-100 border-2 border-green-500 shadow-md"
-                      : item.item_type === "pause"
-                        ? "bg-yellow-50 border-l-4 border-yellow-400"
-                        : "bg-gray-50"
-                  }`}
-                >
-                  {isCurrent && (
-                    <span className="text-green-600 font-bold animate-pulse">
-                      LIVE
-                    </span>
-                  )}
-                  {item.item_type === "music" && (
-                    <img
-                      src={item.thumbnail}
-                      alt=""
-                      className="w-12 h-12 rounded"
-                    />
-                  )}
-                  <div className="flex-1 text-sm">
-                    {item.item_type === "pause"
-                      ? `${item.description || "Pause"} - ${item.duration}s`
-                      : item.title}
-                  </div>
-                  <span className="text-xs text-gray-500">
-                    {item.addedBy || "Gast"}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-
         {/* === AI RECOMMENDATIONS UI (STABIL) === */}
         {isLiveJoined && (
           <div className="mt-6">
@@ -1389,6 +1243,163 @@ const SessionPage = () => {
             </div>
           </div>
         )}
+
+        <div className="bg-white p-4 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
+          <div className="flex gap-3 items-center">
+            <input
+              type="number"
+              min="5"
+              value={pauseDuration}
+              onChange={(e) => setPauseDuration(Number(e.target.value))}
+              className="border rounded p-2 w-20"
+            />
+            <span className="text-sm text-gray-600">Sekunden</span>
+            <input
+              type="text"
+              value={pauseDescription}
+              onChange={(e) => setPauseDescription(e.target.value)}
+              className="flex-1 border rounded p-2"
+              placeholder="Beschreibung (optional)"
+            />
+            <button
+              onClick={async () => {
+                try {
+                  await axios.post(
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
+                    {
+                      item_type: "pause",
+                      duration: pauseDuration,
+                      description: pauseDescription,
+                    },
+                    { headers: getAuthHeaders() },
+                  );
+                  loadSessionData(); // Queue neu laden
+                } catch (err) {
+                  console.error(err);
+                  alert("Fehler beim Hinzufügen der Pause");
+                }
+              }}
+              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
+            >
+              Pause hinzufügen
+            </button>
+          </div>
+        </div>
+
+        {/* === Voting Round (Songs mit status = suggested) === */}
+        <div className="bg-white p-4 rounded-lg shadow mb-6">
+          {/* Anzahl der Vorschläge anzeigen */}
+          <h2 className="text-xl font-semibold mb-3">
+            🗳 Abstimmung (
+            {proposals.filter((p) => p.status === "suggested").length} / 5)
+          </h2>
+
+          {proposals.length === 0 ? (
+            <p className="text-gray-500">
+              Keine vorgeschlagenen Songs aktuell.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {proposals
+                .filter((p) => p.status === "suggested")
+                .map((song) => (
+                  <div
+                    key={song.id}
+                    className={`flex items-center justify-between p-2 rounded ${
+                      song.itemType === "pause"
+                        ? "bg-yellow-50 border-l-4 border-yellow-400"
+                        : "bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {song.itemType === "music" && (
+                        <img
+                          src={song.thumbnail}
+                          alt={song.title}
+                          className="w-12 h-12 rounded"
+                        />
+                      )}
+
+                      <div>
+                        <p className="font-semibold">
+                          {song.itemType === "pause"
+                            ? `${song.description || "Pause"} - ${song.duration}s`
+                            : song.title}
+                        </p>
+
+                        <p className="text-sm text-gray-500">
+                          Vorgeschlagen von {song.addedBy}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => voteSong(song.id)}
+                        className={`px-3 py-1 rounded text-white ${
+                          song.userHasVoted
+                            ? "bg-green-600"
+                            : "bg-gray-400 hover:bg-green-500"
+                        }`}
+                      >
+                        👍 {song.votes}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-3">
+            ⏯️ Queue ({queue.filter((p) => p.status === "queued").length})
+          </h2>
+
+          {queue.length === 0 ? (
+            <p className="text-gray-500">Leer</p>
+          ) : (
+            queue.map((item) => {
+              const isCurrent =
+                currentSong?.videoId === item.video_id && isLiveJoined;
+
+              return (
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-3 mb-2 p-2 rounded transition-all ${
+                    isCurrent
+                      ? "bg-green-100 border-2 border-green-500 shadow-md"
+                      : item.item_type === "pause"
+                        ? "bg-yellow-50 border-l-4 border-yellow-400"
+                        : "bg-gray-50"
+                  }`}
+                >
+                  {isCurrent && (
+                    <span className="text-green-600 font-bold animate-pulse">
+                      LIVE
+                    </span>
+                  )}
+                  {item.item_type === "music" && (
+                    <img
+                      src={item.thumbnail}
+                      alt=""
+                      className="w-12 h-12 rounded"
+                    />
+                  )}
+                  <div className="flex-1 text-sm">
+                    {item.item_type === "pause"
+                      ? `${item.description || "Pause"} - ${item.duration}s`
+                      : item.title}
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {item.addedBy || "Gast"}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
 
         {isLiveJoined && (
           <div
