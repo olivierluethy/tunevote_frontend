@@ -117,25 +117,25 @@ const SessionPage = () => {
   };
 
   const ensureGuestToken = async () => {
-  let guestToken = localStorage.getItem("guestToken");
-  const nickname = localStorage.getItem("guestName") || "Gast";
+    let guestToken = localStorage.getItem("guestToken");
+    const nickname = localStorage.getItem("guestName") || "Gast";
 
-  if (!guestToken) {
-    try {
-      const { data } = await axios.post("http://localhost:4000/guest/join", {
-        nickname,
-      });
-      guestToken = data.guestToken;
-      localStorage.setItem("guestToken", guestToken);
-      localStorage.setItem("guestName", data.nickname);
-      console.log("New guest created:", data);
-    } catch (err) {
-      console.error("Guest creation failed:", err);
+    if (!guestToken) {
+      try {
+        const { data } = await axios.post("http://localhost:4000/guest/join", {
+          nickname,
+        });
+        guestToken = data.guestToken;
+        localStorage.setItem("guestToken", guestToken);
+        localStorage.setItem("guestName", data.nickname);
+        console.log("New guest created:", data);
+      } catch (err) {
+        console.error("Guest creation failed:", err);
+      }
     }
-  }
 
-  return guestToken;
-};
+    return guestToken;
+  };
 
   const loadSessionData = useCallback(async () => {
     try {
@@ -361,6 +361,23 @@ const SessionPage = () => {
     }
   };
 
+  function extractYouTubeId(url) {
+    try {
+      const patterns = [
+        /v=([a-zA-Z0-9_-]+)/, // https://www.youtube.com/watch?v=ID
+        /youtu\.be\/([a-zA-Z0-9_-]+)/, // https://youtu.be/ID
+        /youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/, // Shorts
+      ];
+
+      for (const p of patterns) {
+        const match = url.match(p);
+        if (match) return match[1];
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
   // ← NEU: Cache beim Mount laden
   useEffect(() => {
     loadCache();
@@ -380,85 +397,121 @@ const SessionPage = () => {
 
     searchDebounceRef.current = setTimeout(async () => {
       const normQuery = normalize(query);
-      const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
 
-      try {
-        // 1. Cache-Suche
-        const matches = videoCache
-          .map((item) => {
-            const ratio = levenshteinRatio(item.title_norm, normQuery);
-            return { ...item, ratio };
-          })
-          .filter(
-            (item) => item.ratio > 85 || item.title_norm.includes(normQuery),
-          )
-          .sort((a, b) => b.ratio - a.ratio)
-          .slice(0, 5);
+      // 🔥 1. Prüfen ob der User einen YouTube Link eingegeben hat
+      const youtubeId = extractYouTubeId(query);
 
-        let results = [];
-
-        if (matches.length > 0) {
-          results = matches.map((m) => ({
-            id: { videoId: m.youtubeId }, // ← ÄNDERN!
-            snippet: {
-              title: m.title,
-              thumbnails: { default: { url: m.thumbnail } },
-            },
-          }));
-        } else if (API_KEY) {
-          // 2. YouTube API
+      if (youtubeId) {
+        try {
           const res = await axios.get(
-            "https://www.googleapis.com/youtube/v3/search",
-            {
-              params: {
-                part: "snippet",
-                type: "video",
-                maxResults: 5,
-                q: query,
-                key: API_KEY,
+            `http://localhost:4000/youtube-info/${youtubeId}`,
+          );
+          const info = res.data;
+
+          // Sicherstellen: exakt gleiches Format wie YouTube Search API
+          const result = {
+            id: { videoId: youtubeId },
+            snippet: {
+              title: info.snippet?.title || "Unbekannter Titel",
+              thumbnails: {
+                default: {
+                  url:
+                    info.snippet?.thumbnails?.default?.url ||
+                    info.snippet?.thumbnails?.[0]?.url ||
+                    `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
+                },
               },
             },
-          );
-          results = res.data.items || [];
+          };
 
-          // 3. Cache speichern
-          for (const item of results) {
-            const youtubeId = item.id.videoId;
-            const title = item.snippet.title;
-            const thumbnail =
-              item.snippet.thumbnails.medium?.url ||
-              `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
-            const norm = normalize(title);
-
-            await axios.post(
-              "http://localhost:4000/youtube-cache",
-              { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
-              { headers: getAuthHeaders() },
-            );
-          }
-          await loadCache();
+          setSearchResults([result]);
+          return;
+        } catch (err) {
+          console.error("YTDL fetch failed", err);
+          // Optional: Fallback auf leeres Ergebnis
+          setSearchResults([]);
         }
+      } else {
+        const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
 
-        setSearchResults(results);
+        try {
+          // 1. Cache-Suche
+          const matches = videoCache
+            .map((item) => {
+              const ratio = levenshteinRatio(item.title_norm, normQuery);
+              return { ...item, ratio };
+            })
+            .filter(
+              (item) => item.ratio > 85 || item.title_norm.includes(normQuery),
+            )
+            .sort((a, b) => b.ratio - a.ratio)
+            .slice(0, 5);
 
-        // KI-Vorschläge
-        if (sessionLive && isLiveJoined) {
-          setAiLoading(true);
-          try {
-            const res = await axios.post(
-              `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
-              { query },
-              { headers: getAuthHeaders() },
+          let results = [];
+
+          if (matches.length > 0) {
+            results = matches.map((m) => ({
+              id: { videoId: m.youtubeId }, // ← ÄNDERN!
+              snippet: {
+                title: m.title,
+                thumbnails: { default: { url: m.thumbnail } },
+              },
+            }));
+          } else if (API_KEY) {
+            // 2. YouTube API
+            const res = await axios.get(
+              "https://www.googleapis.com/youtube/v3/search",
+              {
+                params: {
+                  part: "snippet",
+                  type: "video",
+                  maxResults: 5,
+                  q: query,
+                  key: API_KEY,
+                },
+              },
             );
-            setAiSuggestions(res.data || []);
-          } catch (err) {
-            console.warn("AI suggestion failed", err);
-          } finally {
-            setAiLoading(false);
+            results = res.data.items || [];
+
+            // 3. Cache speichern
+            for (const item of results) {
+              const youtubeId = item.id.videoId;
+              const title = item.snippet.title;
+              const thumbnail =
+                item.snippet.thumbnails.medium?.url ||
+                `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
+              const norm = normalize(title);
+
+              await axios.post(
+                "http://localhost:4000/youtube-cache",
+                { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
+                { headers: getAuthHeaders() },
+              );
+            }
+            await loadCache();
           }
+
+          setSearchResults(results);
+
+          // KI-Vorschläge
+          if (sessionLive && isLiveJoined) {
+            setAiLoading(true);
+            try {
+              const res = await axios.post(
+                `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+                { query },
+                { headers: getAuthHeaders() },
+              );
+              setAiSuggestions(res.data || []);
+            } catch (err) {
+              console.warn("AI suggestion failed", err);
+            } finally {
+              setAiLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error("[Search Error]", err);
         }
-      } catch (err) {
-        console.error("[Search Error]", err);
       }
     }, 300);
   }, [
@@ -539,84 +592,84 @@ const SessionPage = () => {
 
   // === Join Live ===
   const joinLive = async () => {
-  if (!sessionLive || isLiveJoined) return;
-  setIsLiveJoined(true);
+    if (!sessionLive || isLiveJoined) return;
+    setIsLiveJoined(true);
 
-  try {
-    // NUR FÜR GÄSTE: Stelle sicher, dass ein gültiger Gast-Token existiert
-    if (isGuest) {
-      await ensureGuestToken();
-    }
-
-    // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/join-live`,
-      {},
-      { headers: getAuthHeaders() },
-    );
-
-    // Playback-Sync-Daten abrufen
-    const { data } = await axios.get(
-      `http://localhost:4000/sessions/${sessionId}/playback-sync`,
-      { headers: getAuthHeaders() },
-    );
-
-    if (data.current_video_id && data.video_start_time) {
-      syncPlayback(data);
-    }
-  } catch (err) {
-    console.error("Join Live failed", err);
-    setIsLiveJoined(false);
-    alert("Fehler beim Beitreten zur Live-Session");
-    return;
-  }
-
-  // Regelmäßiger Sync
-  syncIntervalRef.current = setInterval(async () => {
-    if (!isLiveJoined) return;
     try {
+      // NUR FÜR GÄSTE: Stelle sicher, dass ein gültiger Gast-Token existiert
+      if (isGuest) {
+        await ensureGuestToken();
+      }
+
+      // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+
+      // Playback-Sync-Daten abrufen
       const { data } = await axios.get(
         `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
       if (data.current_video_id && data.video_start_time) {
-        const elapsed = (Date.now() - data.video_start_time) / 1000;
-        const current = playerRef.current?.getCurrentTime() || 0;
-        if (Math.abs(current - elapsed) > 2) {
-          playerRef.current?.seekTo(elapsed, true);
-        }
+        syncPlayback(data);
       }
-    } catch (e) {
-      console.warn("Sync failed:", e.message);
+    } catch (err) {
+      console.error("Join Live failed", err);
+      setIsLiveJoined(false);
+      alert("Fehler beim Beitreten zur Live-Session");
+      return;
     }
-  }, 10000);
-};
+
+    // Regelmäßiger Sync
+    syncIntervalRef.current = setInterval(async () => {
+      if (!isLiveJoined) return;
+      try {
+        const { data } = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+          { headers: getAuthHeaders() },
+        );
+
+        if (data.current_video_id && data.video_start_time) {
+          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const current = playerRef.current?.getCurrentTime() || 0;
+          if (Math.abs(current - elapsed) > 2) {
+            playerRef.current?.seekTo(elapsed, true);
+          }
+        }
+      } catch (e) {
+        console.warn("Sync failed:", e.message);
+      }
+    }, 10000);
+  };
 
   // === Leave Live ===
   const leaveLive = async () => {
-  // Sofort UI aktualisieren
-  setIsLiveJoined(false);
-  setCurrentSong(null);
-  if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-  if (playerRef.current) {
-    playerRef.current.pauseVideo();
-    // playerRef.current.destroy(); // Nicht zerstören → Wiederverwendung!
-  }
+    // Sofort UI aktualisieren
+    setIsLiveJoined(false);
+    setCurrentSong(null);
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    if (playerRef.current) {
+      playerRef.current.pauseVideo();
+      // playerRef.current.destroy(); // Nicht zerstören → Wiederverwendung!
+    }
 
-  try {
-    await axios.post(
-      `http://localhost:4000/sessions/${sessionId}/leave-live`,
-      {},
-      { headers: getAuthHeaders() },
-    );
-  } catch (err) {
-    console.error("Leave failed", err);
-  } finally {
-    // Egal ob Fehler oder nicht: UI ist "nicht live"
-    await loadSessionData();
-  }
-};
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+    } catch (err) {
+      console.error("Leave failed", err);
+    } finally {
+      // Egal ob Fehler oder nicht: UI ist "nicht live"
+      await loadSessionData();
+    }
+  };
 
   // === Start Session (Host) ===
   const startSession = async () => {
