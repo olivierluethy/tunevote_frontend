@@ -563,27 +563,31 @@ const SessionPage = () => {
   };
 
   // === Sync Playback ===
-  const syncPlayback = ({ current_video_id, video_start_time, is_playing }) => {
-    if (!current_video_id || !video_start_time) return;
+const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_time, is_playing }) => {
+  if (!current_video_id || !video_start_time) return;
 
-    const elapsed = (Date.now() - video_start_time) / 1000;
-    const progress = Math.max(0, elapsed);
+  const item =
+    queue.find((i) => i.id === current_queue_item_id) ||
+    queue.find((i) => i.video_id === current_video_id);
 
-    setCurrentSong({
-      videoId: current_video_id,
-      title:
-        queue.find((i) => i.video_id === current_video_id)?.title ||
-        "Unbekannt",
-      thumbnail:
-        queue.find((i) => i.video_id === current_video_id)?.thumbnail || "",
-    });
+  const elapsed = (Date.now() - video_start_time) / 1000;
+  const progress = Math.max(0, elapsed);
 
-    console.log(
-      `[Playback] Neuer Song wird abgespielt: videoId=${current_video_id}, Titel=${queue.find((i) => i.video_id === current_video_id)?.title || "Unbekannt"}`,
-    );
+  setCurrentSong({
+    queueItemId: current_queue_item_id || item?.id,
+    videoId: current_video_id,
+    title: item?.title || "Unbekannt",
+    thumbnail: item?.thumbnail || "",
+  });
 
-    createPlayer(current_video_id, progress, is_playing);
-  };
+  console.log(
+    `[Playback] Now playing queueItem=${current_queue_item_id || "fallback by video_id"}, videoId=${current_video_id}, title=${item?.title || "Unbekannt"}`
+  );
+
+  createPlayer(current_video_id, progress, is_playing);
+};
+
+
 
   // === Join Live ===
   const joinLive = async () => {
@@ -1362,7 +1366,8 @@ const SessionPage = () => {
           ) : (
             queue.map((item) => {
               const isCurrent =
-                currentSong?.videoId === item.video_id && isLiveJoined;
+  currentSong?.queueItemId === item.id && isLiveJoined;
+
 
               return (
                 <div
