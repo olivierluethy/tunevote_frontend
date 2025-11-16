@@ -52,7 +52,7 @@ export default function Dashboard() {
   // === Sessions laden ===
   const fetchSessions = async () => {
   try {
-    const res = await axios.get("http://localhost:4000/sessions", {
+    const res = await axios.get("https://api.tunevote.com/sessions", {
       headers: getAuthHeaders(),
     });
     setSessions(res.data);
@@ -90,7 +90,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "http://localhost:4000/sessions",
+        "https://api.tunevote.com/sessions",
         { title: newSessionTitle },
         { headers: getAuthHeaders() }
       );
@@ -106,7 +106,7 @@ export default function Dashboard() {
   // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`http://localhost:4000/sessions/${sessionId}`, {
+      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
         headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
