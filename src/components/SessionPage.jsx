@@ -287,7 +287,6 @@ const SessionPage = () => {
   }, []);
 
   // === CACHE LADEN (außerhalb von useEffect!) ===
-  // === CACHE LADEN ===
   const loadCache = useCallback(async () => {
     try {
       const res = await axios.get("http://localhost:4000/youtube-cache");
@@ -303,7 +302,6 @@ const SessionPage = () => {
     }
   }, []);
 
-  // === AI RECOMMENDATIONS FETCH ===
   // === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
   useEffect(() => {
     if (!isLiveJoined || !currentSong?.videoId) {
@@ -563,31 +561,34 @@ const SessionPage = () => {
   };
 
   // === Sync Playback ===
-const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_time, is_playing }) => {
-  if (!current_video_id || !video_start_time) return;
+  const syncPlayback = ({
+    current_queue_item_id,
+    current_video_id,
+    video_start_time,
+    is_playing,
+  }) => {
+    if (!current_video_id || !video_start_time) return;
 
-  const item =
-    queue.find((i) => i.id === current_queue_item_id) ||
-    queue.find((i) => i.video_id === current_video_id);
+    const item =
+      queue.find((i) => i.id === current_queue_item_id) ||
+      queue.find((i) => i.video_id === current_video_id);
 
-  const elapsed = (Date.now() - video_start_time) / 1000;
-  const progress = Math.max(0, elapsed);
+    const elapsed = (Date.now() - video_start_time) / 1000;
+    const progress = Math.max(0, elapsed);
 
-  setCurrentSong({
-    queueItemId: current_queue_item_id || item?.id,
-    videoId: current_video_id,
-    title: item?.title || "Unbekannt",
-    thumbnail: item?.thumbnail || "",
-  });
+    setCurrentSong({
+      queueItemId: current_queue_item_id || item?.id,
+      videoId: current_video_id,
+      title: item?.title || "Unbekannt",
+      thumbnail: item?.thumbnail || "",
+    });
 
-  console.log(
-    `[Playback] Now playing queueItem=${current_queue_item_id || "fallback by video_id"}, videoId=${current_video_id}, title=${item?.title || "Unbekannt"}`
-  );
+    console.log(
+      `[Playback] Now playing queueItem=${current_queue_item_id || "fallback by video_id"}, videoId=${current_video_id}, title=${item?.title || "Unbekannt"}`,
+    );
 
-  createPlayer(current_video_id, progress, is_playing);
-};
-
-
+    createPlayer(current_video_id, progress, is_playing);
+  };
 
   // === Join Live ===
   const joinLive = async () => {
@@ -986,18 +987,16 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
           <QRCodeCanvas value={window.location.href} size={100} />
           <button
-            onClick={async () => {
+            onClick={async (e) => {
+              const btn = e.currentTarget; // <-- unbedingt VOR await speichern
+
               const url = window.location.href;
               const title = document.title || "Schau dir das an!";
               const text = "Hier ist ein interessanter Link:";
 
               if (navigator.share) {
                 try {
-                  await navigator.share({
-                    title,
-                    text,
-                    url,
-                  });
+                  await navigator.share({ title, text, url });
                   console.log("Link erfolgreich geteilt!");
                 } catch (err) {
                   console.error("Teilen abgebrochen oder fehlgeschlagen:", err);
@@ -1005,7 +1004,15 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
               } else {
                 // Fallback: Link kopieren
                 await navigator.clipboard.writeText(url);
-                alert("Link kopiert!");
+
+                const textSpan = btn.querySelector(".share-text");
+                if (!textSpan) return;
+
+                const originalText = textSpan.innerText;
+                textSpan.innerText = "Link kopiert!";
+                setTimeout(() => {
+                  textSpan.innerText = originalText;
+                }, 2000);
               }
             }}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-lg shadow-md hover:from-blue-700 hover:to-indigo-700 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
@@ -1028,7 +1035,7 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
               <line x1="8.59" y1="10.49" x2="15.42" y2="6.51" />
             </svg>
-            Link teilen
+            <span className="share-text">Link teilen</span>
           </button>
 
           {sessionLive && (
@@ -1145,108 +1152,7 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
               ))}
             </div>
           )}
-
-          {/* KI-Vorschläge direkt darunter */}
-          {aiLoading && (
-            <p className="text-sm text-gray-500">
-              KI-Vorschläge werden geladen…
-            </p>
-          )}
-          {!aiLoading && aiSuggestions.length > 0 && (
-            <div className="mt-4 bg-gradient-to-r from-indigo-50 to-purple-50 p-3 rounded-lg">
-              <h3 className="text-lg font-semibold text-purple-700 mb-2">
-                KI-Songvorschläge
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {aiSuggestions.map((sugg) => (
-                  <div
-                    key={sugg.youtubeId}
-                    className="flex items-center gap-3 bg-white rounded p-2 shadow-sm hover:shadow"
-                  >
-                    <img
-                      src={
-                        sugg.thumbnail ||
-                        `https://i.ytimg.com/vi/${sugg.youtubeId}/default.jpg`
-                      }
-                      alt={sugg.title}
-                      className="w-12 h-12 rounded"
-                    />
-                    <div className="flex-1 text-sm font-medium truncate">
-                      {sugg.title}
-                    </div>
-                    <button
-                      onClick={() =>
-                        proposeSong({
-                          youtubeId: sugg.youtubeId,
-                          title: sugg.title,
-                          thumbnail: sugg.thumbnail,
-                        })
-                      }
-                      className="bg-purple-600 text-white px-2 py-1 rounded text-xs"
-                    >
-                      Vorschlagen
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-
-        {/* === AI RECOMMENDATIONS UI (STABIL) === */}
-        {isLiveJoined && (
-          <div className="mt-6">
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                AI-Vorschläge
-              </h2>
-
-              {recLoading ? (
-                <p className="text-sm text-gray-600">Lade Vorschläge…</p>
-              ) : recommendations.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">
-                  Keine Vorschläge verfügbar
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {recommendations
-                    .filter((rec) => rec.youtubeId && rec.title)
-                    .map((rec) => (
-                      <div
-                        key={rec.youtubeId}
-                        className="flex items-center gap-2 p-2 bg-white rounded shadow-sm hover:shadow transition"
-                      >
-                        <img
-                          src={`https://i.ytimg.com/vi/${rec.youtubeId}/default.jpg`}
-                          alt={rec.title}
-                          className="w-12 h-12 rounded"
-                          onError={(e) => {
-                            e.target.src = "/fallback-thumbnail.png";
-                          }}
-                        />
-                        <div className="flex-1 text-sm">
-                          <div className="font-medium truncate">
-                            {rec.title}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => addRecommendation(rec)}
-                          disabled={recLoading || addingId === rec.youtubeId}
-                          className={`px-2 py-1 rounded text-xs text-white transition ${
-                            recLoading || addingId === rec.youtubeId
-                              ? "bg-gray-400 cursor-not-allowed"
-                              : "bg-purple-600 hover:bg-purple-700"
-                          }`}
-                        >
-                          {addingId === rec.youtubeId ? "✓" : "+"}
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
@@ -1293,7 +1199,6 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
 
         {/* === Voting Round (Songs mit status = suggested) === */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
-          {/* Anzahl der Vorschläge anzeigen */}
           <h2 className="text-xl font-semibold mb-3">
             🗳 Abstimmung (
             {proposals.filter((p) => p.status === "suggested").length} / 5)
@@ -1310,18 +1215,27 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
                 .map((song) => (
                   <div
                     key={song.id}
-                    className={`flex items-center justify-between p-2 rounded ${
-                      song.itemType === "pause"
-                        ? "bg-yellow-50 border-l-4 border-yellow-400"
-                        : "bg-gray-50"
-                    }`}
+                    className={`flex items-center justify-between p-3 rounded-lg relative transition-all
+              ${
+                song.itemSource === "ai"
+                  ? "bg-gradient-to-r from-purple-50 to-purple-100 border border-purple-300 animate-[pulse_4s_infinite]"
+                  : "bg-gray-100"
+              }
+            `}
                   >
+                    {/* Modern KI Badge */}
+                    {song.itemSource === "ai" && (
+                      <span className="absolute -top-2 right-2 text-[10px] font-bold text-white px-2 py-0.5 rounded-lg bg-purple-600 shadow-md animate-[bounce_3s_infinite]">
+                        🤖 AI
+                      </span>
+                    )}
+
                     <div className="flex items-center gap-3">
                       {song.itemType === "music" && (
                         <img
                           src={song.thumbnail}
                           alt={song.title}
-                          className="w-12 h-12 rounded"
+                          className="w-12 h-12 rounded-lg shadow-sm"
                         />
                       )}
 
@@ -1332,24 +1246,30 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
                             : song.title}
                         </p>
 
-                        <p className="text-sm text-gray-500">
-                          Vorgeschlagen von {song.addedBy}
+                        <p className="text-sm text-gray-600">
+                          Vorgeschlagen von{" "}
+                          <span className="font-semibold">
+                            {song.itemSource === "ai" ? "🤖 KI" : song.addedBy}
+                          </span>
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => voteSong(song.id)}
-                        className={`px-3 py-1 rounded text-white ${
-                          song.userHasVoted
-                            ? "bg-green-600"
-                            : "bg-gray-400 hover:bg-green-500"
-                        }`}
-                      >
-                        👍 {song.votes}
-                      </button>
-                    </div>
+                    {/* Vote Button with Animations */}
+                    <button
+                      onClick={() => voteSong(song.id)}
+                      className={`
+                min-w-[60px] px-3 py-1 rounded-lg font-semibold transition-all
+                transform active:scale-90 
+                ${
+                  song.userHasVoted
+                    ? "bg-green-600 text-white shadow-md scale-110 animate-[pop_0.3s_ease-out]"
+                    : "bg-gray-300 text-gray-700 hover:bg-green-500 hover:text-white"
+                }
+              `}
+                    >
+                      👍 {song.votes}
+                    </button>
                   </div>
                 ))}
             </div>
@@ -1366,8 +1286,7 @@ const syncPlayback = ({ current_queue_item_id, current_video_id, video_start_tim
           ) : (
             queue.map((item) => {
               const isCurrent =
-  currentSong?.queueItemId === item.id && isLiveJoined;
-
+                currentSong?.queueItemId === item.id && isLiveJoined;
 
               return (
                 <div
