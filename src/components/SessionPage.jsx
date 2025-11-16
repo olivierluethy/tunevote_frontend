@@ -554,7 +554,12 @@ const SessionPage = () => {
               `[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`,
             );
           }
-          playerRef.current.setVolume(isMutedForMe ? 0 : volume);
+          if (isMutedForMe) {
+            playerRef.current.mute();
+          } else {
+            playerRef.current.unMute();
+            playerRef.current.setVolume(volume);
+          }
         },
       },
     });
@@ -705,7 +710,12 @@ const SessionPage = () => {
     const next = !isMutedForMe;
     setIsMutedForMe(next);
     localStorage.setItem(`mute_${sessionId}`, next);
-    playerRef.current?.setVolume(next ? 0 : volume);
+    if (next) {
+      playerRef.current?.mute();
+    } else {
+      playerRef.current?.unMute();
+      playerRef.current?.setVolume(volume);
+    }
   };
 
   // === Suche & Vorschlag ===
