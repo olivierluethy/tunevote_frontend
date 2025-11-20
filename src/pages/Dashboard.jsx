@@ -51,24 +51,24 @@ export default function Dashboard() {
 
   // === Sessions laden ===
   const fetchSessions = async () => {
-  try {
-    const res = await axios.get("https://api.tunevote.com/sessions", {
-      headers: getAuthHeaders(),
-    });
-    setSessions(res.data);
-  } catch (err) {
-    console.error("Fehler beim Laden der Sessions:", err);
+    try {
+      const res = await axios.get("http://localhost:4000/sessions", {
+        headers: getAuthHeaders(),
+      });
+      setSessions(res.data);
+    } catch (err) {
+      console.error("Fehler beim Laden der Sessions:", err);
 
-    // Nur bei echten Token-Problemen ausloggen, nicht bei Gast-Token
-    if (
-      !isGuest &&
-      (err.response?.status === 401 || err.response?.status === 403)
-    ) {
-      localStorage.clear();
-      navigate("/login");
+      // Nur bei echten Token-Problemen ausloggen, nicht bei Gast-Token
+      if (
+        !isGuest &&
+        (err.response?.status === 401 || err.response?.status === 403)
+      ) {
+        localStorage.clear();
+        navigate("/login");
+      }
     }
-  }
-};
+  };
 
   useEffect(() => {
     if (token || guestToken) {
@@ -90,9 +90,9 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://api.tunevote.com/sessions",
+        "http://localhost:4000/sessions",
         { title: newSessionTitle },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
       setSessions((prev) => [res.data, ...prev]);
       setNewSessionTitle("");
@@ -106,7 +106,7 @@ export default function Dashboard() {
   // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
+      await axios.delete(`http://localhost:4000/sessions/${sessionId}`, {
         headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
@@ -154,7 +154,9 @@ export default function Dashboard() {
             <Music className="w-8 h-8 text-purple-400" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
               Willkommen, <span className="text-white">{displayName}</span>!
-              {isGuest && <span className="text-sm text-yellow-400 ml-2">(Gast)</span>}
+              {isGuest && (
+                <span className="text-sm text-yellow-400 ml-2">(Gast)</span>
+              )}
             </h1>
           </div>
           <button
@@ -162,13 +164,14 @@ export default function Dashboard() {
             className="group flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-red-600/20 border border-red-500/50 hover:bg-red-600/30 transition-all duration-300"
           >
             <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span className="font-medium">{isGuest ? "Verlassen" : "Logout"}</span>
+            <span className="font-medium">
+              {isGuest ? "Verlassen" : "Logout"}
+            </span>
           </button>
         </div>
       </motion.header>
 
       <main className="relative z-10 max-w-7xl mx-auto px-6 py-10">
-
         {/* === GAST-BANNER === */}
         {isGuest && (
           <motion.div
@@ -181,7 +184,8 @@ export default function Dashboard() {
               <div>
                 <p className="font-semibold text-yellow-200">Gastmodus aktiv</p>
                 <p className="text-sm text-yellow-300">
-                  Erstelle einen Account, um Sessions zu erstellen und zu löschen!
+                  Erstelle einen Account, um Sessions zu erstellen und zu
+                  löschen!
                 </p>
               </div>
             </div>
@@ -240,7 +244,9 @@ export default function Dashboard() {
             <Radio className="w-8 h-8 text-purple-400" />
             <span>Aktive Sessions</span>
           </h2>
-          <p className="text-gray-400">{sessions.length} Session{sessions.length !== 1 ? "s" : ""}</p>
+          <p className="text-gray-400">
+            {sessions.length} Session{sessions.length !== 1 ? "s" : ""}
+          </p>
         </div>
 
         {sessions.length === 0 ? (
@@ -254,9 +260,13 @@ export default function Dashboard() {
             </div>
             <p className="text-xl text-gray-400">Noch keine Sessions</p>
             {isGuest ? (
-              <p className="text-gray-500">Tritt einer Session bei oder erstelle einen Account!</p>
+              <p className="text-gray-500">
+                Tritt einer Session bei oder erstelle einen Account!
+              </p>
             ) : (
-              <p className="text-gray-500">Erstelle deine erste Session oben!</p>
+              <p className="text-gray-500">
+                Erstelle deine erste Session oben!
+              </p>
             )}
           </motion.div>
         ) : (
@@ -296,7 +306,18 @@ export default function Dashboard() {
                     </p>
                     <p className="flex items-center space-x-2">
                       <Clock className="w-4 h-4" />
-                      <span>{new Date(s.created_at).toLocaleDateString()} um {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>
+                        {new Date(s.created_at).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "2-digit",
+                          year: "numeric",
+                        })}{" "}
+                        at{" "}
+                        {new Date(s.created_at).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
                     </p>
                   </div>
 
@@ -382,7 +403,8 @@ export default function Dashboard() {
               </div>
 
               <p className="text-gray-300 mb-8">
-                Diese Aktion kann nicht rückgängig gemacht werden. Alle Teilnehmer werden entfernt.
+                Diese Aktion kann nicht rückgängig gemacht werden. Alle
+                Teilnehmer werden entfernt.
               </p>
 
               <div className="flex space-x-3">
