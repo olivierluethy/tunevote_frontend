@@ -544,16 +544,15 @@ const SessionPage = () => {
         modestbranding: 1,
         rel: 0,
         fs: 0,
+        mute: isMutedForMe ? 1 : 0,   // ← NEW
       },
       events: {
         onReady: () => {
           playerRef.current.seekTo(startSeconds, true);
-          if (shouldPlay) {
-            playerRef.current.playVideo();
-            console.log(
-              `[createPlayer] Neuer Player spielt Song ab: videoId=${videoId}, Startzeit=${startSeconds}s`,
-            );
-          }
+
+          if (shouldPlay) playerRef.current.playVideo();
+
+          // Re-apply mute again for safety
           if (isMutedForMe) {
             playerRef.current.mute();
           } else {
