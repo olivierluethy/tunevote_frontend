@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import SessionPage from './components/SessionPage';
 import ForgotPassowrd from './pages/ForgotPassword';
 import Home from './pages/Home'; // ✅ Home-Seite importieren
+import InviteRedirect from "./pages/InviteRedirect";
 
 // ✅ Authentifizierungs-Wrapper
 const RequireAuth = ({ children }) => {
@@ -33,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassowrd />} />
+        <Route path="/invite/:token" element={<InviteRedirect />} />
 
         {/* 📊 Geschützte Seite */}
         <Route
