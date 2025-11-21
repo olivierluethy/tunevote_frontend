@@ -38,6 +38,10 @@ export default function Dashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
 
+  const [sentInvites, setSentInvites] = useState([]);
+const [receivedInvites, setReceivedInvites] = useState([]);
+
+
   // Prüfungen
   const isGuest = !token && guestToken;
   const isLoggedIn = !!token;
@@ -71,6 +75,77 @@ export default function Dashboard() {
       }
     }
   };
+
+  const fetchSentInvites = async () => {
+  try {
+    const res = await axios.get("http://localhost:4000/invites/sent", {
+      headers: getAuthHeaders(),
+    });
+    setSentInvites(res.data);
+  } catch (err) {
+    console.error("Fehler beim Laden gesendeter Einladungen:", err);
+  }
+};
+
+const fetchReceivedInvites = async () => {
+  try {
+    const res = await axios.get("http://localhost:4000/invites/received", {
+      headers: getAuthHeaders(),
+    });
+    setReceivedInvites(res.data);
+  } catch (err) {
+    console.error("Fehler beim Laden empfangener Einladungen:", err);
+  }
+};
+
+const revokeInvite = async (inviteId) => {
+  if (!confirm("Möchtest du diese Einladung wirklich widerrufen?")) return;
+
+  try {
+    await axios.post(
+      `http://localhost:4000/invites/${inviteId}/revoke`,
+      {},
+      { headers: getAuthHeaders() }
+    );
+    // Liste neu laden
+    fetchSentInvites();
+    // Optional: auch empfangene neu laden (falls der andere gerade online ist)
+    fetchReceivedInvites();
+  } catch (err) {
+    alert("Fehler beim Widerrufen der Einladung");
+    console.error(err);
+  }
+};
+
+useEffect(() => {
+  if (isLoggedIn) {
+    fetchSentInvites();
+    fetchReceivedInvites();
+  }
+}, [isLoggedIn]);
+
+const acceptInvite = async (inviteId) => {
+  try {
+    await axios.post(`http://localhost:4000/invites/${inviteId}/accept`, {}, {
+      headers: getAuthHeaders(),
+    });
+    fetchReceivedInvites(); // aktualisieren
+  } catch (err) {
+    alert("Fehler beim Akzeptieren");
+  }
+};
+
+const rejectInvite = async (inviteId) => {
+  try {
+    await axios.post(`http://localhost:4000/invites/${inviteId}/reject`, {}, {
+      headers: getAuthHeaders(),
+    });
+    fetchReceivedInvites(); // aktualisieren
+  } catch (err) {
+    alert("Fehler beim Ablehnen");
+  }
+};
+
 
   useEffect(() => {
     if (token || guestToken) {
@@ -425,6 +500,85 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* === Eingeladene Sessions anzeigen === */}
+<div className="mt-16">
+  <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
+    <UserPlus className="w-8 h-8 text-purple-400" />
+    <span>Einladungen</span>
+  </h2>
+
+  {/* Gesendete Einladungen */}
+  <div className="mb-8">
+    <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
+    {sentInvites.length === 0 ? (
+      <p className="text-gray-300">Noch keine Einladungen verschickt.</p>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {sentInvites.map((invite) => (
+          <div
+            key={invite.id}
+            className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between relative"
+          >
+            <div>
+              <p className="text-sm mb-1">
+                Session: <strong>{invite.session_title}</strong>
+              </p>
+              <p className="text-gray-400 text-xs mb-2">An: {invite.email}</p>
+
+              {/* Status */}
+              <p className="text-gray-400 text-xs mb-3">
+                Status:{" "}
+                {invite.accepted_at ? (
+                  <span className="text-green-400">Akzeptiert</span>
+                ) : invite.revoked_at ? (
+                  <span className="text-red-400">Widerrufen</span>
+                ) : (
+                  <span className="text-yellow-400">Ausstehend</span>
+                )}
+              </p>
+            </div>
+
+            {/* Widerrufen-Button – nur bei ausstehenden Einladungen */}
+            {!invite.accepted_at && !invite.revoked_at && (
+              <button
+                onClick={() => revokeInvite(invite.id)}
+                className="mt-3 w-full py-2 rounded-xl bg-red-600/80 hover:bg-red-700 text-white font-medium text-sm transition-all"
+              >
+                Einladung widerrufen
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {/* Empfangene Einladungen */}
+  <div>
+    <h3 className="text-xl font-semibold mb-3">Von anderen erhalten</h3>
+    {receivedInvites.length === 0 ? (
+      <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {receivedInvites.map((invite) => (
+          <div key={invite.id} className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between">
+            <p className="text-sm mb-1">Session: <strong>{invite.session_title}</strong></p>
+            <p className="text-gray-400 text-xs mb-2">Von: {invite.host_name}</p>
+            <p className="text-gray-400 text-xs mb-2">Status: {invite.accepted_at ? "Akzeptiert" : invite.revoked_at ? "Abgelehnt" : "Ausstehend"}</p>
+            {!invite.accepted_at && !invite.revoked_at && (
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => acceptInvite(invite.id)} className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium transition-all">Akzeptieren</button>
+                <button onClick={() => rejectInvite(invite.id)} className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-all">Ablehnen</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</div>
+
 
       {/* === Delete Modal === */}
       <AnimatePresence>
