@@ -17,10 +17,9 @@ const RequireAuth = ({ children }) => {
   return (token || guestToken) ? children : <Navigate to="/login" replace />;
 };
 
-// ✅ Home-Komponente mit Weiterleitung, falls eingeloggt
+// ✅ Home-Komponente ohne Weiterleitung
 const HomeRedirect = () => {
-  const token = localStorage.getItem('token');
-  return token ? <Navigate to="/dashboard" replace /> : <Home />;
+  return <Home />;
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(
