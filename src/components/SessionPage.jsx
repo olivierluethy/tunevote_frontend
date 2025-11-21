@@ -24,6 +24,12 @@ const SessionPage = () => {
   const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
   const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
 
+  const [liveParticipants, setLiveParticipants] = useState([]); // <-- NEU
+  // === ADD NEW STATES – direkt nach den anderen useState (z. B. nach liveParticipants) ===
+
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteStatus, setInviteStatus] = useState(""); // "success" | "error" | ""
+
   // Voting
   const [votingRound, setVotingRound] = useState(null);
   const [remainingTime, setRemainingTime] = useState(0);
@@ -116,6 +122,32 @@ const SessionPage = () => {
     }
   };
 
+  // === ADD NEW FUNCTION – direkt nach loadLiveParticipants() ===
+
+  const sendInvite = async () => {
+    console.log("Sending invite to:", inviteEmail);
+    if (!inviteEmail.trim() || !/^\S+@\S+\.\S+$/.test(inviteEmail)) {
+      setInviteStatus("error");
+      setTimeout(() => setInviteStatus(""), 3000);
+      return;
+    }
+
+    try {
+      await axios.post(
+        `http://localhost:4000/sessions/${sessionId}/invite`,
+        { email: inviteEmail },
+        { headers: getAuthHeaders() }
+      );
+      setInviteStatus("success");
+      setInviteEmail("");
+      setTimeout(() => setInviteStatus(""), 3000);
+    } catch (err) {
+      console.error("Invite failed:", err);
+      setInviteStatus("error");
+      setTimeout(() => setInviteStatus(""), 4000);
+    }
+  };
+
   const ensureGuestToken = async () => {
     let guestToken = localStorage.getItem("guestToken");
     const nickname = localStorage.getItem("guestName") || "Gast";
@@ -153,6 +185,11 @@ const SessionPage = () => {
       setIsHost(isLoggedIn && sessRes.data.hostId === Number(userId));
       setSessionLive(!!sessRes.data.is_live);
 
+      // ADD BELOW – Teilnehmer direkt beim ersten Laden holen
+      if (sessRes.data.is_private) {
+        loadLiveParticipants();
+      }
+
       // Gast: Kein userId → isHost = false → korrekt
     } catch (err) {
       console.error(err);
@@ -164,6 +201,20 @@ const SessionPage = () => {
     }
   }, [sessionId, userId, navigate]);
 
+  const loadLiveParticipants = useCallback(async () => {
+    if (!session?.is_private) return; // Nur bei privaten Sessions
+
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/participants`,
+        { headers: getAuthHeaders() }
+      );
+      setLiveParticipants(res.data || []);
+    } catch (err) {
+      console.error("Failed to load live participants:", err);
+    }
+  }, [sessionId, session?.is_private]);
+
   useEffect(() => {
     if (token || guestToken) {
       loadSessionData();
@@ -172,6 +223,7 @@ const SessionPage = () => {
       const interval = setInterval(() => {
         loadSessionData();
         loadProposals(); // ← NEU: Alle 10s aktualisieren
+        loadLiveParticipants();
       }, 10000);
 
       return () => clearInterval(interval);
@@ -212,9 +264,14 @@ const SessionPage = () => {
     });
 
     socketRef.current.on("playback_sync", (data) => {
-      if (!isLiveJoined) return;
-      syncPlayback(data);
-    });
+  if (!isLiveJoined) return;
+  syncPlayback(data);
+});
+
+// NEU: Echtzeit-Update der Live-Teilnehmer
+socketRef.current.on("live_participants_updated", (participants) => {
+  setLiveParticipants(participants);
+});
 
     socketRef.current.on("session_ended", ({ message }) => {
       alert(message);
@@ -598,6 +655,7 @@ const SessionPage = () => {
   const joinLive = async () => {
     if (!sessionLive || isLiveJoined) return;
     setIsLiveJoined(true);
+    loadLiveParticipants(); // <-- NEU: Sofort aktualisieren
 
     try {
       // NUR FÜR GÄSTE: Stelle sicher, dass ein gültiger Gast-Token existiert
@@ -671,6 +729,7 @@ const SessionPage = () => {
     } catch (err) {
       console.error("Leave failed", err);
     } finally {
+      loadLiveParticipants(); // <-- NEU: Auch wenn man selbst verlässt
       await loadSessionData();
     }
   };
@@ -1062,6 +1121,38 @@ const SessionPage = () => {
           )}
         </div>
 
+        {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
+          {isHost && session?.is_private === 1 && (
+            <div className="bg-white p-4 rounded-lg shadow mb-6">
+              <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
+              <div className="flex gap-3 items-center">
+                <input
+                  type="email"
+                  placeholder="email@beispiel.de"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendInvite()}
+                  className="flex-1 border rounded-lg px-3 py-2"
+                />
+                <button
+                  onClick={sendInvite}
+                  disabled={!inviteEmail.trim()}
+                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  Einladen
+                </button>
+              </div>
+              {inviteStatus === "success" && (
+                <p className="text-green-600 text-sm mt-2">Einladung verschickt!</p>
+              )}
+              {inviteStatus === "error" && (
+                <p className="text-red-600 text-sm mt-2">
+                  Ungültige E-Mail oder Fehler beim Versand.
+                </p>
+              )}
+            </div>
+          )}
+
         {sessionLive && isLiveJoined && (
           <>
             {isPaused ? (
@@ -1101,6 +1192,26 @@ const SessionPage = () => {
               </div>
             ) : null}
           </>
+        )}
+
+        {/* LIVE-TEILNEHMER (nur private Sessions) */}
+        {session?.is_private === 1 && liveParticipants.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              Live dabei ({liveParticipants.length})
+            </h3>
+            <div className="space-y-2">
+              {liveParticipants.map((p, i) => (
+  <div key={i} className="flex items-center gap-2 text-sm">
+    <span className="text-green-600">●</span>
+    <span>
+      {p.name}
+      {p.isHost && <span className="ml-1 text-indigo-600 font-semibold">Host</span>}
+    </span>
+  </div>
+))}
+            </div>
+          </div>
         )}
 
         {isLiveJoined && (
