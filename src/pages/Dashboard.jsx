@@ -520,7 +520,7 @@ const rejectInvite = async (inviteId) => {
     </div>
   )}
                   {/* Live Indicator */}
-                  {s.is_live && (
+                  {s.is_live === 1 && (
                     <div className="absolute -top-3 -right-3 flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold animate-pulse">
                       <div className="relative">
                         <div className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-75"></div>
