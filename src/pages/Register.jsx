@@ -18,29 +18,37 @@ export default function Register() {
     }, []);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setLoading(true);
-    setSuccess(false);
+  e.preventDefault();
+  setMessage("");
+  setLoading(true);
+  setSuccess(false);
 
-    try {
-      const res = await axios.post("http://localhost:4000/register", {
-        username,
-        email,
-        password,
-      });
-      setMessage(res.data.message);
-      setSuccess(true);
-      setUsername("");
-      setEmail("");
-      setPassword("");
-    } catch (err) {
-      setMessage(err.response?.data?.error || "Server error");
-      setSuccess(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    const res = await axios.post("http://localhost:4000/register", {
+      username,
+      email,
+      password,
+    });
+
+    setMessage(res.data.message);
+    setSuccess(true);
+    setUsername("");
+    setEmail("");
+    setPassword("");
+
+    // ⭐ Redirect after short delay
+    setTimeout(() => {
+      window.location.href = "/login";
+    }, 500);
+
+  } catch (err) {
+    setMessage(err.response?.data?.error || "Server error");
+    setSuccess(false);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 overflow-hidden relative flex items-center justify-center p-4">
