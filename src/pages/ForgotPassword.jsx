@@ -17,7 +17,7 @@ export default function PasswordReset() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("http://localhost/forgot-password", { email });
+      const res = await axios.post("http://localhost:4000/forgot-password", { email });
       setMessage(res.data.message || "Reset link sent! Check your email.");
       setSuccess(true);
       setEmail("");
