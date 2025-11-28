@@ -35,6 +35,9 @@ const SessionPage = () => {
   const [remainingTime, setRemainingTime] = useState(0);
   const [connectedCount, setConnectedCount] = useState(0);
   const [votesCast, setVotesCast] = useState(0);
+  // === NEUE STATES – direkt nach deinen bestehenden useState ===
+const [votingPhase, setVotingPhase] = useState(null); // { phase: "suggesting" | "voting", endsAt: timestamp, duration: seconds }
+const [timeRemaining, setTimeRemaining] = useState(0); // in Sekunden
 
   const hasInteracted = useRef(false); // Wichtig: Autoplay nur nach Interaktion
 
@@ -94,6 +97,34 @@ const SessionPage = () => {
           : {}),
     };
   };
+
+  // === NEU: Aktuelle Phase beim Laden holen (Fallback, falls Socket noch nicht verbunden) ===
+const loadCurrentVotingPhase = useCallback(async () => {
+  if (!sessionLive) return;
+
+  try {
+    const res = await axios.get(
+      `http://localhost:4000/sessions/${sessionId}/current-phase`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (res.data && res.data.phase && res.data.endsAt) {
+      console.log("[Phase] Gefetched from API:", res.data);
+      setVotingPhase({
+        phase: res.data.phase,
+        endsAt: new Date(res.data.endsAt).getTime(),
+        duration: res.data.duration || 90,
+        roundId: res.data.roundId,
+      });
+
+      const remaining = Math.max(0, Math.floor((new Date(res.data.endsAt).getTime() - Date.now()) / 1000));
+      setTimeRemaining(remaining);
+    }
+  } catch (err) {
+    console.warn("Konnte aktuelle Phase nicht laden (normal, wenn noch keine aktiv)", err.response?.status);
+    // 404 oder kein offene Runde → nichts tun
+  }
+}, [sessionId, sessionLive]);
 
   const loadProposals = useCallback(async () => {
     try {
@@ -190,6 +221,11 @@ const SessionPage = () => {
         loadLiveParticipants();
       }
 
+      // === NEU: Direkt nach Session-Live-Status Phase laden ===
+    if (sessRes.data.is_live) {
+      loadCurrentVotingPhase();
+    }
+
       // Gast: Kein userId → isHost = false → korrekt
     } catch (err) {
       console.error(err);
@@ -214,6 +250,80 @@ const SessionPage = () => {
       console.error("Failed to load live participants:", err);
     }
   }, [sessionId, session?.is_private]);
+
+// === NEU: Socket-Event für Phasenwechsel ===
+// 1. Voting Phase Listener – Dependency auf socketRef.current!
+useEffect(() => {
+  if (!socketRef.current) return;
+
+  const handler = (data) => {
+    console.log("[Voting Phase] Update vom Server:", data);
+    setVotingPhase({
+      phase: data.phase,
+      endsAt: data.endsAt,
+      duration: data.duration || (data.phase === "suggesting" ? 90 : 60),
+      roundId: data.roundId,
+    });
+    const remaining = Math.max(0, Math.floor((data.endsAt - Date.now()) / 1000));
+    setTimeRemaining(remaining);
+  };
+
+  socketRef.current.on("voting_phase_changed", handler);
+
+  return () => {
+    socketRef.current?.off("voting_phase_changed", handler);
+  };
+}, [socketRef.current]); // ← Das ist der entscheidende Fix!
+
+// 2. Beim Verbindungsaufbau immer die aktuelle Phase laden (Safety Net)
+useEffect(() => {
+  if (!socketRef.current) return;
+
+  const onConnect = () => {
+    console.log("Socket connected → lade aktuelle Voting-Phase");
+    loadCurrentVotingPhase(); // ← Das ist deine bereits existierende Funktion!
+  };
+
+  socketRef.current.on("connect", onConnect);
+
+  return () => {
+    socketRef.current?.off("connect", onConnect);
+  };
+}, [socketRef.current, loadCurrentVotingPhase]);
+
+// === NEU: Countdown-Timer (läuft jede Sekunde) ===
+useEffect(() => {
+  if (!votingPhase) {
+    setTimeRemaining(0);
+    return;
+  }
+
+  const timer = setInterval(() => {
+    setTimeRemaining((prev) => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((votingPhase.endsAt - now) / 1000));
+
+      if (remaining <= 0) {
+        clearInterval(timer);
+        // Optional: Phase automatisch zurücksetzen nach "closed" setzen (falls Server verspätet)
+        if (votingPhase.phase === "suggesting" || votingPhase.phase === "voting") {
+          setVotingPhase(null);
+        }
+        return 0;
+      }
+      return remaining;
+    });
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, [votingPhase]);
+
+// === Hilfsfunktion für schöne Zeitformatierung ===
+const formatTime = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
 
   useEffect(() => {
     if (token || guestToken) {
@@ -252,6 +362,9 @@ const SessionPage = () => {
       console.log("Session started broadcast:", data);
       setSessionLive(true);
       loadSessionData();
+
+      // === NEU: Auch hier Phase laden (falls Socket-Event noch nicht kam) ===
+  loadCurrentVotingPhase();
 
       // WICHTIG: Auch für Gäste syncen!
       if (isLiveJoined && data.firstVideoId) {
@@ -1121,6 +1234,46 @@ socketRef.current.on("live_participants_updated", (participants) => {
           )}
         </div>
 
+        {/* === NEUE RESTZEIT-ANZEIGE – direkt nach dem QR-Code/Join-Live-Bereich === */}
+{sessionLive && votingPhase && timeRemaining > 0 && (
+  <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
+    <h2 className="text-2xl font-bold mb-2">
+      {votingPhase.phase === "suggesting" ? (
+        <>Songvorschläge einreichen</>
+      ) : (
+        <>Abstimmung läuft</>
+      )}
+    </h2>
+    <div className="text-5xl font-mono font-bold tracking-wider mb-3">
+      {formatTime(timeRemaining)}
+    </div>
+    <div className="bg-white/20 h-3 rounded-full overflow-hidden">
+      <div
+        className={`h-full transition-all duration-1000 ease-linear ${
+          votingPhase.phase === "suggesting" ? "bg-green-400" : "bg-orange-400"
+        }`}
+        style={{
+          width: `${
+            ((votingPhase.duration - timeRemaining) / votingPhase.duration) * 100
+          }%`,
+        }}
+      />
+    </div>
+    <p className="mt-3 text-sm opacity-90">
+      {votingPhase.phase === "suggesting"
+        ? "Schlage jetzt deinen Song vor!"
+        : "Stimme für deinen Favoriten ab!"}
+    </p>
+  </div>
+)}
+
+{/* Optional: Hinweis, wenn gerade keine Phase aktiv ist */}
+{sessionLive && !votingPhase && isLiveJoined && (
+  <div className="bg-gray-100 text-gray-700 p-4 rounded-lg text-center mb-6">
+    <p>Warte auf nächste Abstimmungsrunde…</p>
+  </div>
+)}
+
         {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
           {isHost && session?.is_private === 1 && (
             <div className="bg-white p-4 rounded-lg shadow mb-6">
@@ -1376,20 +1529,29 @@ socketRef.current.on("live_participants_updated", (participants) => {
                     </div>
 
                     {/* Vote Button with Animations */}
-                    <button
-                      onClick={() => voteSong(song.id)}
-                      className={`
-                min-w-[60px] px-3 py-1 rounded-lg font-semibold transition-all
-                transform active:scale-90 
-                ${
-                  song.userHasVoted
-                    ? "bg-green-600 text-white shadow-md scale-110 animate-[pop_0.3s_ease-out]"
-                    : "bg-gray-300 text-gray-700 hover:bg-green-500 hover:text-white"
-                }
-              `}
-                    >
-                      👍 {song.votes}
-                    </button>
+                  {/* Vote Button – NUR in der Voting-Phase anzeigen! */}
+{votingPhase?.phase === "voting" ? (
+  <button
+    onClick={() => voteSong(song.id)}
+    disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
+    className={`
+      min-w-[60px] px-4 py-2 rounded-lg font-bold transition-all transform active:scale-95
+      ${song.userHasVoted
+        ? "bg-green-600 text-white shadow-lg"
+        : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
+      }
+    `}
+  >
+    {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} ({song.votes})
+  </button>
+) : (
+  <div className="text-gray-500 text-sm italic">
+    {votingPhase?.phase === "suggesting" 
+      ? "Vorschlagsphase – Abstimmung startet gleich!"
+      : "Warte auf nächste Runde"
+    }
+  </div>
+)}
                   </div>
                 ))}
             </div>
