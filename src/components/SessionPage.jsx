@@ -132,6 +132,27 @@ const SessionPage = () => {
     }
   }, [sessionId, sessionLive]);
 
+  const removeSongFromSuggestions = async (proposalId) => {
+  if (!window.confirm("Deinen Vorschlag wirklich entfernen?")) return;
+
+  try {
+    await axios.delete(
+      `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
+      { headers: getAuthHeaders() }
+    );
+
+    // UI aktualisieren
+    await loadProposals();
+    await loadSessionData(); // falls sich die Queue ändert (bei Pausen etc.)
+  } catch (err) {
+    console.error("Fehler beim Entfernen des Vorschlags:", err);
+    alert(
+      err.response?.data?.message ||
+        "Fehler: Du kannst nur deinen eigenen Vorschlag entfernen."
+    );
+  }
+};
+
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
@@ -1567,29 +1588,39 @@ const SessionPage = () => {
 
                     {/* Vote Button with Animations */}
                     {/* Vote Button – NUR in der Voting-Phase anzeigen! */}
-                    {votingPhase?.phase === "voting" ? (
-                      <button
-                        onClick={() => voteSong(song.id)}
-                        disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
-                        className={`
+{votingPhase?.phase === "voting" ? (
+  <button
+    onClick={() => voteSong(song.id)}
+    disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
+    className={`
       min-w-[60px] px-4 py-2 rounded-lg font-bold transition-all transform active:scale-95
-      ${
-        song.userHasVoted
-          ? "bg-green-600 text-white shadow-lg"
-          : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
+      ${song.userHasVoted
+        ? "bg-green-600 text-white shadow-lg"
+        : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
       }
     `}
-                      >
-                        {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} (
-                        {song.votes})
-                      </button>
-                    ) : (
-                      <div className="text-gray-500 text-sm italic">
-                        {votingPhase?.phase === "suggesting"
-                          ? "Vorschlagsphase – Abstimmung startet gleich!"
-                          : "Warte auf nächste Runde"}
-                      </div>
-                    )}
+  >
+    {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} ({song.votes})
+  </button>
+) : (
+  <div className="text-gray-500 text-sm italic">
+    {votingPhase?.phase === "suggesting" ? (
+      <>
+        Vorschlagsphase – Abstimmung startet gleich!
+        {/* Hier den Löschbutton nur anzeigen, wenn der Song ein Vorschlag ist */}
+        <button
+          onClick={() => removeSongFromSuggestions(song.id)}  // Hier musst du die Funktion `removeSongFromSuggestions` anpassen
+          className="ml-4 text-red-600 hover:text-red-800"
+        >
+          Vorschlag entfernen
+        </button>
+      </>
+    ) : (
+      "Warte auf nächste Runde"
+    )}
+  </div>
+)}
+
                   </div>
                 ))}
             </div>
