@@ -36,8 +36,8 @@ const SessionPage = () => {
   const [connectedCount, setConnectedCount] = useState(0);
   const [votesCast, setVotesCast] = useState(0);
   // === NEUE STATES – direkt nach deinen bestehenden useState ===
-const [votingPhase, setVotingPhase] = useState(null); // { phase: "suggesting" | "voting", endsAt: timestamp, duration: seconds }
-const [timeRemaining, setTimeRemaining] = useState(0); // in Sekunden
+  const [votingPhase, setVotingPhase] = useState(null); // { phase: "suggesting" | "voting", endsAt: timestamp, duration: seconds }
+  const [timeRemaining, setTimeRemaining] = useState(0); // in Sekunden
 
   const hasInteracted = useRef(false); // Wichtig: Autoplay nur nach Interaktion
 
@@ -99,32 +99,38 @@ const [timeRemaining, setTimeRemaining] = useState(0); // in Sekunden
   };
 
   // === NEU: Aktuelle Phase beim Laden holen (Fallback, falls Socket noch nicht verbunden) ===
-const loadCurrentVotingPhase = useCallback(async () => {
-  if (!sessionLive) return;
+  const loadCurrentVotingPhase = useCallback(async () => {
+    if (!sessionLive) return;
 
-  try {
-    const res = await axios.get(
-      `http://localhost:4000/sessions/${sessionId}/current-phase`,
-      { headers: getAuthHeaders() }
-    );
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/current-phase`,
+        { headers: getAuthHeaders() },
+      );
 
-    if (res.data && res.data.phase && res.data.endsAt) {
-      console.log("[Phase] Gefetched from API:", res.data);
-      setVotingPhase({
-        phase: res.data.phase,
-        endsAt: new Date(res.data.endsAt).getTime(),
-        duration: res.data.duration || 90,
-        roundId: res.data.roundId,
-      });
+      if (res.data && res.data.phase && res.data.endsAt) {
+        console.log("[Phase] Gefetched from API:", res.data);
+        setVotingPhase({
+          phase: res.data.phase,
+          endsAt: new Date(res.data.endsAt).getTime(),
+          duration: res.data.duration || 90,
+          roundId: res.data.roundId,
+        });
 
-      const remaining = Math.max(0, Math.floor((new Date(res.data.endsAt).getTime() - Date.now()) / 1000));
-      setTimeRemaining(remaining);
+        const remaining = Math.max(
+          0,
+          Math.floor((new Date(res.data.endsAt).getTime() - Date.now()) / 1000),
+        );
+        setTimeRemaining(remaining);
+      }
+    } catch (err) {
+      console.warn(
+        "Konnte aktuelle Phase nicht laden (normal, wenn noch keine aktiv)",
+        err.response?.status,
+      );
+      // 404 oder kein offene Runde → nichts tun
     }
-  } catch (err) {
-    console.warn("Konnte aktuelle Phase nicht laden (normal, wenn noch keine aktiv)", err.response?.status);
-    // 404 oder kein offene Runde → nichts tun
-  }
-}, [sessionId, sessionLive]);
+  }, [sessionId, sessionLive]);
 
   const loadProposals = useCallback(async () => {
     try {
@@ -167,7 +173,7 @@ const loadCurrentVotingPhase = useCallback(async () => {
       await axios.post(
         `http://localhost:4000/sessions/${sessionId}/invite`,
         { email: inviteEmail },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
       setInviteStatus("success");
       setInviteEmail("");
@@ -222,9 +228,9 @@ const loadCurrentVotingPhase = useCallback(async () => {
       }
 
       // === NEU: Direkt nach Session-Live-Status Phase laden ===
-    if (sessRes.data.is_live) {
-      loadCurrentVotingPhase();
-    }
+      if (sessRes.data.is_live) {
+        loadCurrentVotingPhase();
+      }
 
       // Gast: Kein userId → isHost = false → korrekt
     } catch (err) {
@@ -243,7 +249,7 @@ const loadCurrentVotingPhase = useCallback(async () => {
     try {
       const res = await axios.get(
         `http://localhost:4000/sessions/${sessionId}/participants`,
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
       setLiveParticipants(res.data || []);
     } catch (err) {
@@ -251,79 +257,88 @@ const loadCurrentVotingPhase = useCallback(async () => {
     }
   }, [sessionId, session?.is_private]);
 
-// === NEU: Socket-Event für Phasenwechsel ===
-// 1. Voting Phase Listener – Dependency auf socketRef.current!
-useEffect(() => {
-  if (!socketRef.current) return;
+  // === NEU: Socket-Event für Phasenwechsel ===
+  // 1. Voting Phase Listener – Dependency auf socketRef.current!
+  useEffect(() => {
+    if (!socketRef.current) return;
 
-  const handler = (data) => {
-    console.log("[Voting Phase] Update vom Server:", data);
-    setVotingPhase({
-      phase: data.phase,
-      endsAt: data.endsAt,
-      duration: data.duration || (data.phase === "suggesting" ? 90 : 60),
-      roundId: data.roundId,
-    });
-    const remaining = Math.max(0, Math.floor((data.endsAt - Date.now()) / 1000));
-    setTimeRemaining(remaining);
-  };
+    const handler = (data) => {
+      console.log("[Voting Phase] Update vom Server:", data);
+      setVotingPhase({
+        phase: data.phase,
+        endsAt: data.endsAt,
+        duration: data.duration || (data.phase === "suggesting" ? 90 : 60),
+        roundId: data.roundId,
+      });
+      const remaining = Math.max(
+        0,
+        Math.floor((data.endsAt - Date.now()) / 1000),
+      );
+      setTimeRemaining(remaining);
+    };
 
-  socketRef.current.on("voting_phase_changed", handler);
+    socketRef.current.on("voting_phase_changed", handler);
 
-  return () => {
-    socketRef.current?.off("voting_phase_changed", handler);
-  };
-}, [socketRef.current]); // ← Das ist der entscheidende Fix!
+    return () => {
+      socketRef.current?.off("voting_phase_changed", handler);
+    };
+  }, [socketRef.current]); // ← Das ist der entscheidende Fix!
 
-// 2. Beim Verbindungsaufbau immer die aktuelle Phase laden (Safety Net)
-useEffect(() => {
-  if (!socketRef.current) return;
+  // 2. Beim Verbindungsaufbau immer die aktuelle Phase laden (Safety Net)
+  useEffect(() => {
+    if (!socketRef.current) return;
 
-  const onConnect = () => {
-    console.log("Socket connected → lade aktuelle Voting-Phase");
-    loadCurrentVotingPhase(); // ← Das ist deine bereits existierende Funktion!
-  };
+    const onConnect = () => {
+      console.log("Socket connected → lade aktuelle Voting-Phase");
+      loadCurrentVotingPhase(); // ← Das ist deine bereits existierende Funktion!
+    };
 
-  socketRef.current.on("connect", onConnect);
+    socketRef.current.on("connect", onConnect);
 
-  return () => {
-    socketRef.current?.off("connect", onConnect);
-  };
-}, [socketRef.current, loadCurrentVotingPhase]);
+    return () => {
+      socketRef.current?.off("connect", onConnect);
+    };
+  }, [socketRef.current, loadCurrentVotingPhase]);
 
-// === NEU: Countdown-Timer (läuft jede Sekunde) ===
-useEffect(() => {
-  if (!votingPhase) {
-    setTimeRemaining(0);
-    return;
-  }
+  // === NEU: Countdown-Timer (läuft jede Sekunde) ===
+  useEffect(() => {
+    if (!votingPhase) {
+      setTimeRemaining(0);
+      return;
+    }
 
-  const timer = setInterval(() => {
-    setTimeRemaining((prev) => {
-      const now = Date.now();
-      const remaining = Math.max(0, Math.floor((votingPhase.endsAt - now) / 1000));
+    const timer = setInterval(() => {
+      setTimeRemaining((prev) => {
+        const now = Date.now();
+        const remaining = Math.max(
+          0,
+          Math.floor((votingPhase.endsAt - now) / 1000),
+        );
 
-      if (remaining <= 0) {
-        clearInterval(timer);
-        // Optional: Phase automatisch zurücksetzen nach "closed" setzen (falls Server verspätet)
-        if (votingPhase.phase === "suggesting" || votingPhase.phase === "voting") {
-          setVotingPhase(null);
+        if (remaining <= 0) {
+          clearInterval(timer);
+          // Optional: Phase automatisch zurücksetzen nach "closed" setzen (falls Server verspätet)
+          if (
+            votingPhase.phase === "suggesting" ||
+            votingPhase.phase === "voting"
+          ) {
+            setVotingPhase(null);
+          }
+          return 0;
         }
-        return 0;
-      }
-      return remaining;
-    });
-  }, 1000);
+        return remaining;
+      });
+    }, 1000);
 
-  return () => clearInterval(timer);
-}, [votingPhase]);
+    return () => clearInterval(timer);
+  }, [votingPhase]);
 
-// === Hilfsfunktion für schöne Zeitformatierung ===
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-};
+  // === Hilfsfunktion für schöne Zeitformatierung ===
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   useEffect(() => {
     if (token || guestToken) {
@@ -364,7 +379,7 @@ const formatTime = (seconds) => {
       loadSessionData();
 
       // === NEU: Auch hier Phase laden (falls Socket-Event noch nicht kam) ===
-  loadCurrentVotingPhase();
+      loadCurrentVotingPhase();
 
       // WICHTIG: Auch für Gäste syncen!
       if (isLiveJoined && data.firstVideoId) {
@@ -377,14 +392,14 @@ const formatTime = (seconds) => {
     });
 
     socketRef.current.on("playback_sync", (data) => {
-  if (!isLiveJoined) return;
-  syncPlayback(data);
-});
+      if (!isLiveJoined) return;
+      syncPlayback(data);
+    });
 
-// NEU: Echtzeit-Update der Live-Teilnehmer
-socketRef.current.on("live_participants_updated", (participants) => {
-  setLiveParticipants(participants);
-});
+    // NEU: Echtzeit-Update der Live-Teilnehmer
+    socketRef.current.on("live_participants_updated", (participants) => {
+      setLiveParticipants(participants);
+    });
 
     socketRef.current.on("session_ended", ({ message }) => {
       alert(message);
@@ -473,38 +488,47 @@ socketRef.current.on("live_participants_updated", (participants) => {
   }, []);
 
   // === KI-EMPFEHLUNGEN NUR Beim Start einer neuen Vorschlagsphase laden ===
-useEffect(() => {
-  if (!isLiveJoined || !socketRef.current) {
-    setRecommendations([]);
-    return;
-  }
-
-  const handleSuggestingPhaseStarted = async (data) => {
-    console.log("[KI] Neue Vorschlagsphase gestartet → lade Empfehlungen", data);
-
-    setRecLoading(true);
-    try {
-      const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/recommendations`,
-        { headers: getAuthHeaders() }
-      );
-      setRecommendations(res.data || []);
-    } catch (e) {
-      console.warn("KI-Empfehlungen konnten nicht geladen werden", e);
+  useEffect(() => {
+    if (!isLiveJoined || !socketRef.current) {
       setRecommendations([]);
-    } finally {
-      setRecLoading(false);
+      return;
     }
-  };
 
-  // Event anhängen
-  socketRef.current.on("suggesting_phase_started", handleSuggestingPhaseStarted);
+    const handleSuggestingPhaseStarted = async (data) => {
+      console.log(
+        "[KI] Neue Vorschlagsphase gestartet → lade Empfehlungen",
+        data,
+      );
 
-  // Cleanup
-  return () => {
-    socketRef.current?.off("suggesting_phase_started", handleSuggestingPhaseStarted);
-  };
-}, [isLiveJoined, sessionId, socketRef.current]);
+      setRecLoading(true);
+      try {
+        const res = await axios.get(
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
+          { headers: getAuthHeaders() },
+        );
+        setRecommendations(res.data || []);
+      } catch (e) {
+        console.warn("KI-Empfehlungen konnten nicht geladen werden", e);
+        setRecommendations([]);
+      } finally {
+        setRecLoading(false);
+      }
+    };
+
+    // Event anhängen
+    socketRef.current.on(
+      "suggesting_phase_started",
+      handleSuggestingPhaseStarted,
+    );
+
+    // Cleanup
+    return () => {
+      socketRef.current?.off(
+        "suggesting_phase_started",
+        handleSuggestingPhaseStarted,
+      );
+    };
+  }, [isLiveJoined, sessionId, socketRef.current]);
 
   const addRecommendation = async (rec) => {
     if (addingId === rec.youtubeId) return;
@@ -717,7 +741,7 @@ useEffect(() => {
         modestbranding: 1,
         rel: 0,
         fs: 0,
-        mute: isMutedForMe ? 1 : 0,   // ← NEW
+        mute: isMutedForMe ? 1 : 0, // ← NEW
       },
       events: {
         onReady: () => {
@@ -1238,76 +1262,82 @@ useEffect(() => {
         </div>
 
         {/* === NEUE RESTZEIT-ANZEIGE – direkt nach dem QR-Code/Join-Live-Bereich === */}
-{sessionLive && votingPhase && timeRemaining > 0 && (
-  <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
-    <h2 className="text-2xl font-bold mb-2">
-      {votingPhase.phase === "suggesting" ? (
-        <>Songvorschläge einreichen</>
-      ) : (
-        <>Abstimmung läuft</>
-      )}
-    </h2>
-    <div className="text-5xl font-mono font-bold tracking-wider mb-3">
-      {formatTime(timeRemaining)}
-    </div>
-    <div className="bg-white/20 h-3 rounded-full overflow-hidden">
-      <div
-        className={`h-full transition-all duration-1000 ease-linear ${
-          votingPhase.phase === "suggesting" ? "bg-green-400" : "bg-orange-400"
-        }`}
-        style={{
-          width: `${
-            ((votingPhase.duration - timeRemaining) / votingPhase.duration) * 100
-          }%`,
-        }}
-      />
-    </div>
-    <p className="mt-3 text-sm opacity-90">
-      {votingPhase.phase === "suggesting"
-        ? "Schlage jetzt deinen Song vor!"
-        : "Stimme für deinen Favoriten ab!"}
-    </p>
-  </div>
-)}
+        {sessionLive && votingPhase && timeRemaining > 0 && (
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold mb-2">
+              {votingPhase.phase === "suggesting" ? (
+                <>Songvorschläge einreichen</>
+              ) : (
+                <>Abstimmung läuft</>
+              )}
+            </h2>
+            <div className="text-5xl font-mono font-bold tracking-wider mb-3">
+              {formatTime(timeRemaining)}
+            </div>
+            <div className="bg-white/20 h-3 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-1000 ease-linear ${
+                  votingPhase.phase === "suggesting"
+                    ? "bg-green-400"
+                    : "bg-orange-400"
+                }`}
+                style={{
+                  width: `${
+                    ((votingPhase.duration - timeRemaining) /
+                      votingPhase.duration) *
+                    100
+                  }%`,
+                }}
+              />
+            </div>
+            <p className="mt-3 text-sm opacity-90">
+              {votingPhase.phase === "suggesting"
+                ? "Schlage jetzt deinen Song vor!"
+                : "Stimme für deinen Favoriten ab!"}
+            </p>
+          </div>
+        )}
 
-{/* Optional: Hinweis, wenn gerade keine Phase aktiv ist */}
-{sessionLive && !votingPhase && isLiveJoined && (
-  <div className="bg-gray-100 text-gray-700 p-4 rounded-lg text-center mb-6">
-    <p>Warte auf nächste Abstimmungsrunde…</p>
-  </div>
-)}
+        {/* Optional: Hinweis, wenn gerade keine Phase aktiv ist */}
+        {sessionLive && !votingPhase && isLiveJoined && (
+          <div className="bg-gray-100 text-gray-700 p-4 rounded-lg text-center mb-6">
+            <p>Warte auf nächste Abstimmungsrunde…</p>
+          </div>
+        )}
 
         {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
-          {isHost && session?.is_private === 1 && (
-            <div className="bg-white p-4 rounded-lg shadow mb-6">
-              <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
-              <div className="flex gap-3 items-center">
-                <input
-                  type="email"
-                  placeholder="email@beispiel.de"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendInvite()}
-                  className="flex-1 border rounded-lg px-3 py-2"
-                />
-                <button
-                  onClick={sendInvite}
-                  disabled={!inviteEmail.trim()}
-                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                  Einladen
-                </button>
-              </div>
-              {inviteStatus === "success" && (
-                <p className="text-green-600 text-sm mt-2">Einladung verschickt!</p>
-              )}
-              {inviteStatus === "error" && (
-                <p className="text-red-600 text-sm mt-2">
-                  Ungültige E-Mail oder Fehler beim Versand.
-                </p>
-              )}
+        {isHost && session?.is_private === 1 && (
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
+            <div className="flex gap-3 items-center">
+              <input
+                type="email"
+                placeholder="email@beispiel.de"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendInvite()}
+                className="flex-1 border rounded-lg px-3 py-2"
+              />
+              <button
+                onClick={sendInvite}
+                disabled={!inviteEmail.trim()}
+                className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Einladen
+              </button>
             </div>
-          )}
+            {inviteStatus === "success" && (
+              <p className="text-green-600 text-sm mt-2">
+                Einladung verschickt!
+              </p>
+            )}
+            {inviteStatus === "error" && (
+              <p className="text-red-600 text-sm mt-2">
+                Ungültige E-Mail oder Fehler beim Versand.
+              </p>
+            )}
+          </div>
+        )}
 
         {sessionLive && isLiveJoined && (
           <>
@@ -1358,14 +1388,18 @@ useEffect(() => {
             </h3>
             <div className="space-y-2">
               {liveParticipants.map((p, i) => (
-  <div key={i} className="flex items-center gap-2 text-sm">
-    <span className="text-green-600">●</span>
-    <span>
-      {p.name}
-      {p.isHost && <span className="ml-1 text-indigo-600 font-semibold">Host</span>}
-    </span>
-  </div>
-))}
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-green-600">●</span>
+                  <span>
+                    {p.name}
+                    {p.isHost && (
+                      <span className="ml-1 text-indigo-600 font-semibold">
+                        Host
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1532,29 +1566,30 @@ useEffect(() => {
                     </div>
 
                     {/* Vote Button with Animations */}
-                  {/* Vote Button – NUR in der Voting-Phase anzeigen! */}
-{votingPhase?.phase === "voting" ? (
-  <button
-    onClick={() => voteSong(song.id)}
-    disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
-    className={`
+                    {/* Vote Button – NUR in der Voting-Phase anzeigen! */}
+                    {votingPhase?.phase === "voting" ? (
+                      <button
+                        onClick={() => voteSong(song.id)}
+                        disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
+                        className={`
       min-w-[60px] px-4 py-2 rounded-lg font-bold transition-all transform active:scale-95
-      ${song.userHasVoted
-        ? "bg-green-600 text-white shadow-lg"
-        : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
+      ${
+        song.userHasVoted
+          ? "bg-green-600 text-white shadow-lg"
+          : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
       }
     `}
-  >
-    {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} ({song.votes})
-  </button>
-) : (
-  <div className="text-gray-500 text-sm italic">
-    {votingPhase?.phase === "suggesting" 
-      ? "Vorschlagsphase – Abstimmung startet gleich!"
-      : "Warte auf nächste Runde"
-    }
-  </div>
-)}
+                      >
+                        {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} (
+                        {song.votes})
+                      </button>
+                    ) : (
+                      <div className="text-gray-500 text-sm italic">
+                        {votingPhase?.phase === "suggesting"
+                          ? "Vorschlagsphase – Abstimmung startet gleich!"
+                          : "Warte auf nächste Runde"}
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
