@@ -472,36 +472,39 @@ socketRef.current.on("live_participants_updated", (participants) => {
     }
   }, []);
 
-  // === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
-  useEffect(() => {
-    if (!isLiveJoined || !currentSong?.videoId) {
+  // === KI-EMPFEHLUNGEN NUR Beim Start einer neuen Vorschlagsphase laden ===
+useEffect(() => {
+  if (!isLiveJoined || !socketRef.current) {
+    setRecommendations([]);
+    return;
+  }
+
+  const handleSuggestingPhaseStarted = async (data) => {
+    console.log("[KI] Neue Vorschlagsphase gestartet → lade Empfehlungen", data);
+
+    setRecLoading(true);
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/sessions/${sessionId}/recommendations`,
+        { headers: getAuthHeaders() }
+      );
+      setRecommendations(res.data || []);
+    } catch (e) {
+      console.warn("KI-Empfehlungen konnten nicht geladen werden", e);
       setRecommendations([]);
-      return;
+    } finally {
+      setRecLoading(false);
     }
+  };
 
-    const controller = new AbortController();
+  // Event anhängen
+  socketRef.current.on("suggesting_phase_started", handleSuggestingPhaseStarted);
 
-    const fetchRec = async () => {
-      setRecLoading(true);
-      try {
-        const res = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/recommendations`,
-          { headers: getAuthHeaders(), signal: controller.signal },
-        );
-        setRecommendations(res.data);
-      } catch (e) {
-        if (!axios.isCancel(e)) console.warn("rec fetch error", e);
-      } finally {
-        setRecLoading(false);
-      }
-    };
-
-    fetchRec(); // direkt ausführen, kein setTimeout
-
-    return () => {
-      controller.abort();
-    };
-  }, [isLiveJoined, currentSong, sessionId]);
+  // Cleanup
+  return () => {
+    socketRef.current?.off("suggesting_phase_started", handleSuggestingPhaseStarted);
+  };
+}, [isLiveJoined, sessionId, socketRef.current]);
 
   const addRecommendation = async (rec) => {
     if (addingId === rec.youtubeId) return;
