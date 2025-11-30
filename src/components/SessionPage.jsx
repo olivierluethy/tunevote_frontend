@@ -523,6 +523,7 @@ const SessionPage = () => {
 
       setRecLoading(true);
       try {
+        console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
           `http://localhost:4000/sessions/${sessionId}/recommendations`,
           { headers: getAuthHeaders() },
@@ -550,32 +551,6 @@ const SessionPage = () => {
       );
     };
   }, [isLiveJoined, sessionId, socketRef.current]);
-
-  const addRecommendation = async (rec) => {
-    if (addingId === rec.youtubeId) return;
-    setAddingId(rec.youtubeId);
-
-    try {
-      const { data: newItem } = await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
-        { youtubeId: rec.youtubeId },
-        { headers: getAuthHeaders() },
-      );
-
-      // Direkt in die Queue einfügen
-      setQueue((prev) => [...prev, newItem]);
-
-      // Empfehlung entfernen
-      setRecommendations((prev) =>
-        prev.filter((r) => r.youtubeId !== rec.youtubeId),
-      );
-    } catch (e) {
-      console.error("Add recommendation error (frontend):", e);
-      alert("Fehler beim Hinzufügen");
-    } finally {
-      setAddingId(null);
-    }
-  };
 
   function extractYouTubeId(url) {
     try {

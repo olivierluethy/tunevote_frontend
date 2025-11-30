@@ -11,6 +11,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Home from "./pages/Home";
 import InviteRedirect from "./pages/InviteRedirect";
+import Profile from "./pages/Profile";
 
 
 // 🔐 Nur für geschützte Bereiche (Dashboard usw.)
@@ -91,6 +92,17 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             </RequireAuth>
           }
         />
+
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth>
+              <Profile />
+            </RequireAuth>
+          }
+        />
+
+        
 
 
         {/* 🟢 Öffentlich zugängliche Session-Seite */}
