@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { User, Mail, Lock, Save, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://api.tunevote.com';
 
 const api = axios.create({
   baseURL: API_URL,
