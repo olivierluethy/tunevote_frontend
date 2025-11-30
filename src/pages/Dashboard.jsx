@@ -1,9 +1,10 @@
 // src/pages/Dashboard.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
+import { Menu, Transition } from "@headlessui/react";
 import {
   Plus,
   LogOut,
@@ -19,10 +20,11 @@ import {
   UserPlus,
   Ban,
   CheckCircle,
+  ChevronDown,
+  User,
   XCircle,
-  Lock
+  Lock,
 } from "lucide-react";
-
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -43,8 +45,7 @@ export default function Dashboard() {
   const [isPrivate, setIsPrivate] = useState(false);
 
   const [sentInvites, setSentInvites] = useState([]);
-const [receivedInvites, setReceivedInvites] = useState([]);
-
+  const [receivedInvites, setReceivedInvites] = useState([]);
 
   // Prüfungen
   const isGuest = !token && guestToken;
@@ -81,75 +82,82 @@ const [receivedInvites, setReceivedInvites] = useState([]);
   };
 
   const fetchSentInvites = async () => {
-  try {
-    const res = await axios.get("http://localhost:4000/invites/sent", {
-      headers: getAuthHeaders(),
-    });
-    setSentInvites(res.data);
-  } catch (err) {
-    console.error("Fehler beim Laden gesendeter Einladungen:", err);
-  }
-};
+    try {
+      const res = await axios.get("http://localhost:4000/invites/sent", {
+        headers: getAuthHeaders(),
+      });
+      setSentInvites(res.data);
+    } catch (err) {
+      console.error("Fehler beim Laden gesendeter Einladungen:", err);
+    }
+  };
 
-const fetchReceivedInvites = async () => {
-  try {
-    const res = await axios.get("http://localhost:4000/invites/received", {
-      headers: getAuthHeaders(),
-    });
-    setReceivedInvites(res.data);
-  } catch (err) {
-    console.error("Fehler beim Laden empfangener Einladungen:", err);
-  }
-};
+  const fetchReceivedInvites = async () => {
+    try {
+      const res = await axios.get("http://localhost:4000/invites/received", {
+        headers: getAuthHeaders(),
+      });
+      setReceivedInvites(res.data);
+    } catch (err) {
+      console.error("Fehler beim Laden empfangener Einladungen:", err);
+    }
+  };
 
-const revokeInvite = async (inviteId) => {
-  if (!confirm("Möchtest du diese Einladung wirklich widerrufen?")) return;
+  const revokeInvite = async (inviteId) => {
+    if (!confirm("Möchtest du diese Einladung wirklich widerrufen?")) return;
 
-  try {
-    await axios.post(
-      `http://localhost:4000/invites/${inviteId}/revoke`,
-      {},
-      { headers: getAuthHeaders() }
-    );
-    // Liste neu laden
-    fetchSentInvites();
-    // Optional: auch empfangene neu laden (falls der andere gerade online ist)
-    fetchReceivedInvites();
-  } catch (err) {
-    alert("Fehler beim Widerrufen der Einladung");
-    console.error(err);
-  }
-};
+    try {
+      await axios.post(
+        `http://localhost:4000/invites/${inviteId}/revoke`,
+        {},
+        { headers: getAuthHeaders() },
+      );
+      // Liste neu laden
+      fetchSentInvites();
+      // Optional: auch empfangene neu laden (falls der andere gerade online ist)
+      fetchReceivedInvites();
+    } catch (err) {
+      alert("Fehler beim Widerrufen der Einladung");
+      console.error(err);
+    }
+  };
 
-useEffect(() => {
-  if (isLoggedIn) {
-    fetchSentInvites();
-    fetchReceivedInvites();
-  }
-}, [isLoggedIn]);
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchSentInvites();
+      fetchReceivedInvites();
+    }
+  }, [isLoggedIn]);
 
-const acceptInvite = async (inviteId) => {
-  try {
-    await axios.post(`http://localhost:4000/invites/${inviteId}/accept`, {}, {
-      headers: getAuthHeaders(),
-    });
-    fetchReceivedInvites(); // aktualisieren
-  } catch (err) {
-    alert("Fehler beim Akzeptieren");
-  }
-};
+  const acceptInvite = async (inviteId) => {
+    try {
+      await axios.post(
+        `http://localhost:4000/invites/${inviteId}/accept`,
+        {},
+        {
+          headers: getAuthHeaders(),
+        },
+      );
+      fetchReceivedInvites(); // aktualisieren
+    } catch (err) {
+      alert("Fehler beim Akzeptieren");
+    }
+  };
 
-const rejectInvite = async (inviteId) => {
-  try {
-    await axios.post(`http://localhost:4000/invites/${inviteId}/reject`, {}, {
-      headers: getAuthHeaders(),
-    });
-    fetchReceivedInvites(); // aktualisieren
-  } catch (err) {
-    alert("Fehler beim Ablehnen");
-  }
-};
-
+  const rejectInvite = async (inviteId) => {
+    try {
+      await axios.post(
+        `http://localhost:4000/invites/${inviteId}/reject`,
+        {},
+        {
+          headers: getAuthHeaders(),
+        },
+      );
+      fetchReceivedInvites(); // aktualisieren
+    } catch (err) {
+      alert("Fehler beim Ablehnen");
+    }
+  };
 
   useEffect(() => {
     if (token || guestToken) {
@@ -167,26 +175,25 @@ const rejectInvite = async (inviteId) => {
 
   // === Session erstellen (nur eingeloggte) ===
   const createSession = async () => {
-  if (!isLoggedIn || !newSessionTitle.trim() || loading) return;
-  setLoading(true);
-  try {
-    const res = await axios.post(
-      "http://localhost:4000/sessions",
-      { 
-        title: newSessionTitle,
-        is_private: isPrivate ? 1 : 0
-      },
-      { headers: getAuthHeaders() },
-    );
-    setSessions((prev) => [res.data, ...prev]);
-    setNewSessionTitle("");
-  } catch (err) {
-    alert("Fehler beim Erstellen der Session");
-  } finally {
-    setLoading(false);
-  }
-};
-
+    if (!isLoggedIn || !newSessionTitle.trim() || loading) return;
+    setLoading(true);
+    try {
+      const res = await axios.post(
+        "http://localhost:4000/sessions",
+        {
+          title: newSessionTitle,
+          is_private: isPrivate ? 1 : 0,
+        },
+        { headers: getAuthHeaders() },
+      );
+      setSessions((prev) => [res.data, ...prev]);
+      setNewSessionTitle("");
+    } catch (err) {
+      alert("Fehler beim Erstellen der Session");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
@@ -232,9 +239,11 @@ const rejectInvite = async (inviteId) => {
       <motion.header
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="relative z-10 backdrop-blur-xl bg-black/30 border-b border-white/10"
+        transition={{ duration: 0.6 }}
+        className="relative z-30 backdrop-blur-xl bg-black/30 border-b border-white/10"
       >
         <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+          {/* Links: Logo + Willkommen */}
           <div className="flex items-center space-x-3">
             <Music className="w-8 h-8 text-purple-400" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
@@ -244,15 +253,73 @@ const rejectInvite = async (inviteId) => {
               )}
             </h1>
           </div>
-          <button
-            onClick={handleLogout}
-            className="group flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-red-600/20 border border-red-500/50 hover:bg-red-600/30 transition-all duration-300"
-          >
-            <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span className="font-medium">
-              {isGuest ? "Verlassen" : "Logout"}
-            </span>
-          </button>
+
+          {/* Rechts: Dropdown mit Avatar */}
+          <Menu as="div" className="relative">
+            <Menu.Button className="flex items-center space-x-3 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 transition-all duration-300 group">
+              {/* Avatar */}
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-lg ring-2 ring-white/20">
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+
+              {/* Name (nur ab sm sichtbar) */}
+              <span className="font-medium text-white hidden sm:block">
+                {displayName}
+              </span>
+
+              {/* Pfeil */}
+              <ChevronDown className="w-5 h-5 text-white/70 group-hover:text-white transition-transform group-data-[open]:rotate-180" />
+            </Menu.Button>
+
+            {/* Dropdown-Menü */}
+            <Transition
+              as={Fragment}
+              enter="transition ease-out duration-150"
+              enterFrom="transform opacity-0 scale-95 translate-y-[-8px]"
+              enterTo="transform opacity-100 scale-100 translate-y-0"
+              leave="transition ease-in duration-100"
+              leaveFrom="transform opacity-100 scale-100"
+              leaveTo="transform opacity-0 scale-95 translate-y-[-8px]"
+            >
+              <Menu.Items className="absolute right-0 mt-2 w-56 origin-top-right rounded-2xl bg-black/90 backdrop-blur-xl border border-white/20 shadow-2xl overflow-hidden">
+                <div className="py-2">
+                  {/* Mein Profil*/}
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={() => navigate("/profile")}
+                        className={`${
+                          active ? "bg-white/10" : ""
+                        } flex w-full items-center space-x-3 px-5 py-3 text-left transition-colors duration-200`}
+                      >
+                        <User className="w-5 h-5 text-purple-400" />
+                        <span className="text-white font-medium">
+                          Mein Profil
+                        </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+
+                  {/* Logout / Verlassen */}
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={handleLogout}
+                        className={`${
+                          active ? "bg-red-600/30" : ""
+                        } flex w-full items-center space-x-3 px-5 py-3 text-left transition-colors duration-200`}
+                      >
+                        <LogOut className="w-5 h-5 text-red-400" />
+                        <span className="text-white font-medium">
+                          {isGuest ? "Verlassen" : "Abmelden"}
+                        </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+                </div>
+              </Menu.Items>
+            </Transition>
+          </Menu>
         </div>
       </motion.header>
 
@@ -284,187 +351,215 @@ const rejectInvite = async (inviteId) => {
           </motion.div>
         )}
 
-{/* === Eingeladene Sessions anzeigen === */}
-<div className="mt-16">
-  <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
-    <UserPlus className="w-8 h-8 text-purple-400" />
-    <span>Einladungen</span>
-  </h2>
+        {/* === Eingeladene Sessions anzeigen === */}
+        <div className="mt-16">
+          <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
+            <UserPlus className="w-8 h-8 text-purple-400" />
+            <span>Einladungen</span>
+          </h2>
 
-  {/* Gesendete Einladungen */}
-  
+          {/* Gesendete Einladungen */}
 
-<div className="mb-8">
-  <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
 
-  {sentInvites.length === 0 ? (
-    <p className="text-gray-300">Noch keine Einladungen verschickt.</p>
-  ) : (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {sentInvites.map((invite) => {
-        let statusIcon;
-        let statusText;
-        let statusColor;
-
-        switch (invite.status) {
-          case "accepted":
-            statusIcon = <CheckCircle className="w-4 h-4 text-green-400" />;
-            statusText = "Akzeptiert";
-            statusColor = "text-green-400";
-            break;
-          case "rejected":
-            statusIcon = <XCircle className="w-4 h-4 text-red-400" />;
-            statusText = "Abgelehnt";
-            statusColor = "text-red-400";
-            break;
-          case "revoked":
-            statusIcon = <Ban className="w-4 h-4 text-red-400" />;
-            statusText = "Widerrufen";
-            statusColor = "text-red-400";
-            break;
-          default:
-            statusIcon = <Clock className="w-4 h-4 text-yellow-400" />;
-            statusText = "Ausstehend";
-            statusColor = "text-yellow-400";
-            break;
-        }
-
-        return (
-          <div
-            key={invite.id}
-            className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between relative"
-          >
-            <div>
-              <p className="text-sm mb-1">
-                Session: <strong>{invite.session_title}</strong>
+            {sentInvites.length === 0 ? (
+              <p className="text-gray-300">
+                Noch keine Einladungen verschickt.
               </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sentInvites.map((invite) => {
+                  let statusIcon;
+                  let statusText;
+                  let statusColor;
 
-              <p className="text-gray-400 text-xs mb-2">An: {invite.email}</p>
+                  switch (invite.status) {
+                    case "accepted":
+                      statusIcon = (
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                      );
+                      statusText = "Akzeptiert";
+                      statusColor = "text-green-400";
+                      break;
+                    case "rejected":
+                      statusIcon = <XCircle className="w-4 h-4 text-red-400" />;
+                      statusText = "Abgelehnt";
+                      statusColor = "text-red-400";
+                      break;
+                    case "revoked":
+                      statusIcon = <Ban className="w-4 h-4 text-red-400" />;
+                      statusText = "Widerrufen";
+                      statusColor = "text-red-400";
+                      break;
+                    default:
+                      statusIcon = (
+                        <Clock className="w-4 h-4 text-yellow-400" />
+                      );
+                      statusText = "Ausstehend";
+                      statusColor = "text-yellow-400";
+                      break;
+                  }
 
-              {/* Status */}
-              <div className="flex items-center gap-2 text-xs mb-3">
-                <span className={statusColor + " font-semibold"}>
-                  {statusIcon}
-                </span>
-                <span className={statusColor}>{statusText}</span>
+                  return (
+                    <div
+                      key={invite.id}
+                      className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between relative"
+                    >
+                      <div>
+                        <p className="text-sm mb-1">
+                          Session: <strong>{invite.session_title}</strong>
+                        </p>
+
+                        <p className="text-gray-400 text-xs mb-2">
+                          An: {invite.email}
+                        </p>
+
+                        {/* Status */}
+                        <div className="flex items-center gap-2 text-xs mb-3">
+                          <span className={statusColor + " font-semibold"}>
+                            {statusIcon}
+                          </span>
+                          <span className={statusColor}>{statusText}</span>
+                        </div>
+                      </div>
+
+                      {/* Widerrufen nur wenn pending */}
+                      {invite.status === "pending" && (
+                        <button
+                          onClick={() => revokeInvite(invite.id)}
+                          className="mt-3 w-full py-2 rounded-xl bg-red-600/80 hover:bg-red-700 text-white font-medium text-sm transition-all"
+                        >
+                          Einladung widerrufen
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-
-            {/* Widerrufen nur wenn pending */}
-            {invite.status === "pending" && (
-              <button
-                onClick={() => revokeInvite(invite.id)}
-                className="mt-3 w-full py-2 rounded-xl bg-red-600/80 hover:bg-red-700 text-white font-medium text-sm transition-all"
-              >
-                Einladung widerrufen
-              </button>
             )}
           </div>
-        );
-      })}
-    </div>
-  )}
-</div>
 
-
-  {/* Empfangene Einladungen */}
-  <div>
-    <h3 className="text-xl font-semibold mb-3">Von anderen erhalten</h3>
-    {receivedInvites.length === 0 ? (
-      <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
-    ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {receivedInvites.map((invite) => (
-          <div key={invite.id} className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between">
-            <p className="text-sm mb-1">Session: <strong>{invite.session_title}</strong></p>
-            <p className="text-gray-400 text-xs mb-2">Von: {invite.host_name}</p>
-            <p className="text-gray-400 text-xs mb-2">Status: {invite.accepted_at ? "Akzeptiert" : invite.revoked_at ? "Abgelehnt" : "Ausstehend"}</p>
-            {!invite.accepted_at && !invite.revoked_at && (
-              <div className="flex gap-2 mt-2">
-                <button onClick={() => acceptInvite(invite.id)} className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium transition-all">Akzeptieren</button>
-                <button onClick={() => rejectInvite(invite.id)} className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-all">Ablehnen</button>
+          {/* Empfangene Einladungen */}
+          <div>
+            <h3 className="text-xl font-semibold mb-3">Von anderen erhalten</h3>
+            {receivedInvites.length === 0 ? (
+              <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {receivedInvites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between"
+                  >
+                    <p className="text-sm mb-1">
+                      Session: <strong>{invite.session_title}</strong>
+                    </p>
+                    <p className="text-gray-400 text-xs mb-2">
+                      Von: {invite.host_name}
+                    </p>
+                    <p className="text-gray-400 text-xs mb-2">
+                      Status:{" "}
+                      {invite.accepted_at
+                        ? "Akzeptiert"
+                        : invite.revoked_at
+                          ? "Abgelehnt"
+                          : "Ausstehend"}
+                    </p>
+                    {!invite.accepted_at && !invite.revoked_at && (
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => acceptInvite(invite.id)}
+                          className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium transition-all"
+                        >
+                          Akzeptieren
+                        </button>
+                        <button
+                          onClick={() => rejectInvite(invite.id)}
+                          className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-all"
+                        >
+                          Ablehnen
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        ))}
-      </div>
-    )}
-  </div>
-</div>
+        </div>
 
         {/* === Session erstellen (nur eingeloggte) === */}
         {isLoggedIn && (
-  <motion.div
-    initial={{ y: 20, opacity: 0 }}
-    animate={{ y: 0, opacity: 1 }}
-    transition={{ delay: 0.1 }}
-    className="mb-12"
-  >
-    <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
-      <div className="flex items-center space-x-3 mb-6">
-        <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
-          <Plus className="w-6 h-6" />
-        </div>
-        <h2 className="text-2xl font-bold">Neue Session starten</h2>
-      </div>
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="mb-12"
+          >
+            <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <h2 className="text-2xl font-bold">Neue Session starten</h2>
+              </div>
 
-      <div className="flex flex-col gap-6">
-        
-        {/* Titel */}
-        <input
-          type="text"
-          placeholder="z.B. Summer Vibes 2025"
-          className="px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
-          value={newSessionTitle}
-          onChange={(e) => setNewSessionTitle(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && createSession()}
-          disabled={loading}
-        />
+              <div className="flex flex-col gap-6">
+                {/* Titel */}
+                <input
+                  type="text"
+                  placeholder="z.B. Summer Vibes 2025"
+                  className="px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
+                  value={newSessionTitle}
+                  onChange={(e) => setNewSessionTitle(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && createSession()}
+                  disabled={loading}
+                />
 
-        {/* Öffentlich / Privat Toggle */}
-        <div className="flex items-center justify-between">
-          <span className="text-lg font-semibold">Sichtbarkeit:</span>
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => setIsPrivate(false)}
-              className={`px-4 py-2 rounded-xl border transition-all ${
-                !isPrivate
-                  ? "bg-purple-600 border-purple-400"
-                  : "bg-white/10 border-white/20"
-              }`}
-            >
-              Öffentlich
-            </button>
+                {/* Öffentlich / Privat Toggle */}
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-semibold">Sichtbarkeit:</span>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsPrivate(false)}
+                      className={`px-4 py-2 rounded-xl border transition-all ${
+                        !isPrivate
+                          ? "bg-purple-600 border-purple-400"
+                          : "bg-white/10 border-white/20"
+                      }`}
+                    >
+                      Öffentlich
+                    </button>
 
-            <button
-              type="button"
-              onClick={() => setIsPrivate(true)}
-              className={`px-4 py-2 rounded-xl border transition-all ${
-                isPrivate
-                  ? "bg-pink-600 border-pink-400"
-                  : "bg-white/10 border-white/20"
-              }`}
-            >
-              Privat
-            </button>
-          </div>
-        </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsPrivate(true)}
+                      className={`px-4 py-2 rounded-xl border transition-all ${
+                        isPrivate
+                          ? "bg-pink-600 border-pink-400"
+                          : "bg-white/10 border-white/20"
+                      }`}
+                    >
+                      Privat
+                    </button>
+                  </div>
+                </div>
 
-        {/* Erstellen Button */}
-        <button
-          onClick={createSession}
-          disabled={loading || !newSessionTitle.trim()}
-          className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-          <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
-        </button>
-      </div>
-    </div>
-  </motion.div>
-)}
-
+                {/* Erstellen Button */}
+                <button
+                  onClick={createSession}
+                  disabled={loading || !newSessionTitle.trim()}
+                  className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                  <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* === Sessions Grid === */}
         <div className="mb-6 flex items-center justify-between">
@@ -513,12 +608,12 @@ const rejectInvite = async (inviteId) => {
                   onClick={() => openSession(s)}
                 >
                   {/* Private Badge */}
-  {s.is_private === 1 && (
-    <div className="absolute -top-3 -left-3 flex items-center space-x-2 bg-purple-700/90 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-      <Lock className="w-3 h-3" />
-      <span>Privat</span>
-    </div>
-  )}
+                  {s.is_private === 1 && (
+                    <div className="absolute -top-3 -left-3 flex items-center space-x-2 bg-purple-700/90 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+                      <Lock className="w-3 h-3" />
+                      <span>Privat</span>
+                    </div>
+                  )}
                   {/* Live Indicator */}
                   {s.is_live === 1 && (
                     <div className="absolute -top-3 -right-3 flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold animate-pulse">
