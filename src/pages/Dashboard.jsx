@@ -63,7 +63,7 @@ export default function Dashboard() {
   // === Sessions laden ===
   const fetchSessions = async () => {
     try {
-      const res = await axios.get("http://localhost:4000/sessions", {
+      const res = await axios.get("https://api.tunevote.com/sessions", {
         headers: getAuthHeaders(),
       });
       setSessions(res.data);
@@ -83,7 +83,7 @@ export default function Dashboard() {
 
   const fetchSentInvites = async () => {
     try {
-      const res = await axios.get("http://localhost:4000/invites/sent", {
+      const res = await axios.get("https://api.tunevote.com/invites/sent", {
         headers: getAuthHeaders(),
       });
       setSentInvites(res.data);
@@ -94,7 +94,7 @@ export default function Dashboard() {
 
   const fetchReceivedInvites = async () => {
     try {
-      const res = await axios.get("http://localhost:4000/invites/received", {
+      const res = await axios.get("https://api.tunevote.com/invites/received", {
         headers: getAuthHeaders(),
       });
       setReceivedInvites(res.data);
@@ -108,7 +108,7 @@ export default function Dashboard() {
 
     try {
       await axios.post(
-        `http://localhost:4000/invites/${inviteId}/revoke`,
+        `https://api.tunevote.com/invites/${inviteId}/revoke`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -132,7 +132,7 @@ export default function Dashboard() {
   const acceptInvite = async (inviteId) => {
     try {
       await axios.post(
-        `http://localhost:4000/invites/${inviteId}/accept`,
+        `https://api.tunevote.com/invites/${inviteId}/accept`,
         {},
         {
           headers: getAuthHeaders(),
@@ -147,7 +147,7 @@ export default function Dashboard() {
   const rejectInvite = async (inviteId) => {
     try {
       await axios.post(
-        `http://localhost:4000/invites/${inviteId}/reject`,
+        `https://api.tunevote.com/invites/${inviteId}/reject`,
         {},
         {
           headers: getAuthHeaders(),
@@ -179,7 +179,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "http://localhost:4000/sessions",
+        "https://api.tunevote.com/sessions",
         {
           title: newSessionTitle,
           is_private: isPrivate ? 1 : 0,
@@ -198,7 +198,7 @@ export default function Dashboard() {
   // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`http://localhost:4000/sessions/${sessionId}`, {
+      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
         headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
