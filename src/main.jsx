@@ -1,44 +1,89 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import SessionPage from './components/SessionPage';
-import ForgotPassword from './pages/ForgotPassword'; // Korrektur: Tippfehler!
-import ResetPassword from './pages/ResetPassword';   // <-- Diese Seite fehlt dir!
-import Home from './pages/Home';
-import InviteRedirect from "./pages/InviteRedirect";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// Auth-Wrapper
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import SessionPage from "./components/SessionPage";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import Home from "./pages/Home";
+import InviteRedirect from "./pages/InviteRedirect";
+import Profile from "./pages/Profile";
+
+
+// 🔐 Nur für geschützte Bereiche (Dashboard usw.)
 const RequireAuth = ({ children }) => {
-  const token = localStorage.getItem('token');
-  const guestToken = localStorage.getItem('guestToken');
-  return (token || guestToken) ? children : <Navigate to="/login" replace />;
+  const token = localStorage.getItem("token");
+  const guestToken = localStorage.getItem("guestToken");
+  return token || guestToken ? children : <Navigate to="/login" replace />;
 };
+
+
+// 🚫 Auf Login/Register nicht zugelassen, wenn eingeloggt
+const GuestOnly = ({ children }) => {
+  const token = localStorage.getItem("token");
+  const guestToken = localStorage.getItem("guestToken");
+  return token || guestToken ? <Navigate to="/dashboard" replace /> : children;
+};
+
 
 const HomeRedirect = () => <Home />;
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
+
         {/* 🏠 Home */}
         <Route path="/" element={<HomeRedirect />} />
 
-        {/* 🔐 Öffentliche Auth-Routen */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        
-        {/* Neu: Password-Reset mit Token */}
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-        {/* Einladungs-Weiterleitung */}
+        {/* 🔐 Auth-only für Gäste */}
+        <Route
+          path="/login"
+          element={
+            <GuestOnly>
+              <Login />
+            </GuestOnly>
+          }
+        />
+
+        <Route
+          path="/register"
+          element={
+            <GuestOnly>
+              <Register />
+            </GuestOnly>
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={
+            <GuestOnly>
+              <ForgotPassword />
+            </GuestOnly>
+          }
+        />
+
+        <Route
+          path="/reset-password/:token"
+          element={
+            <GuestOnly>
+              <ResetPassword />
+            </GuestOnly>
+          }
+        />
+
+        {/* Einladungen */}
         <Route path="/invite/:token" element={<InviteRedirect />} />
 
-        {/* Geschützte Routen */}
+
+        {/* 🔐 Geschützte Bereiche */}
         <Route
           path="/dashboard"
           element={
@@ -49,16 +94,27 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         />
 
         <Route
-          path="/session/:sessionId"
+          path="/profile"
           element={
             <RequireAuth>
-              <SessionPage />
+              <Profile />
             </RequireAuth>
           }
         />
 
+        
+
+
+        {/* 🟢 Öffentlich zugängliche Session-Seite */}
+        <Route
+          path="/session/:sessionId"
+          element={<SessionPage />}
+        />
+
+
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
+
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
