@@ -5,7 +5,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 
-const SOCKET_SERVER = "http://localhost:4000";
+const SOCKET_SERVER = "https://api.tunevote.com";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -35,6 +35,9 @@ const SessionPage = () => {
   const [remainingTime, setRemainingTime] = useState(0);
   const [connectedCount, setConnectedCount] = useState(0);
   const [votesCast, setVotesCast] = useState(0);
+  // === NEUE STATES – direkt nach deinen bestehenden useState ===
+  const [votingPhase, setVotingPhase] = useState(null); // { phase: "suggesting" | "voting", endsAt: timestamp, duration: seconds }
+  const [timeRemaining, setTimeRemaining] = useState(0); // in Sekunden
 
   const hasInteracted = useRef(false); // Wichtig: Autoplay nur nach Interaktion
 
@@ -95,10 +98,65 @@ const SessionPage = () => {
     };
   };
 
+  // === NEU: Aktuelle Phase beim Laden holen (Fallback, falls Socket noch nicht verbunden) ===
+  const loadCurrentVotingPhase = useCallback(async () => {
+    if (!sessionLive) return;
+
+    try {
+      const res = await axios.get(
+        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
+        { headers: getAuthHeaders() },
+      );
+
+      if (res.data && res.data.phase && res.data.endsAt) {
+        console.log("[Phase] Gefetched from API:", res.data);
+        setVotingPhase({
+          phase: res.data.phase,
+          endsAt: new Date(res.data.endsAt).getTime(),
+          duration: res.data.duration || 90,
+          roundId: res.data.roundId,
+        });
+
+        const remaining = Math.max(
+          0,
+          Math.floor((new Date(res.data.endsAt).getTime() - Date.now()) / 1000),
+        );
+        setTimeRemaining(remaining);
+      }
+    } catch (err) {
+      console.warn(
+        "Konnte aktuelle Phase nicht laden (normal, wenn noch keine aktiv)",
+        err.response?.status,
+      );
+      // 404 oder kein offene Runde → nichts tun
+    }
+  }, [sessionId, sessionLive]);
+
+  const removeSongFromSuggestions = async (proposalId) => {
+    if (!window.confirm("Deinen Vorschlag wirklich entfernen?")) return;
+
+    try {
+      await axios.delete(
+        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
+        { headers: getAuthHeaders() },
+      );
+
+      // UI aktualisieren
+      await loadProposals();
+      await loadSessionData(); // falls sich die Queue ändert (bei Pausen etc.)
+    } catch (err) {
+      console.error("Fehler beim Entfernen des Vorschlags:", err);
+      alert(
+        err.response?.data?.message ||
+          "Fehler: Du kannst nur deinen eigenen Vorschlag entfernen.",
+      );
+    }
+  };
+
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/proposals`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() },
       );
       setProposals(res.data || []);
@@ -110,7 +168,7 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -134,9 +192,9 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/invite`,
+        `https://api.tunevote.com/sessions/${sessionId}/invite`,
         { email: inviteEmail },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
       setInviteStatus("success");
       setInviteEmail("");
@@ -154,7 +212,7 @@ const SessionPage = () => {
 
     if (!guestToken) {
       try {
-        const { data } = await axios.post("http://localhost:4000/guest/join", {
+        const { data } = await axios.post("https://api.tunevote.com/guest/join", {
           nickname,
         });
         guestToken = data.guestToken;
@@ -172,10 +230,10 @@ const SessionPage = () => {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -188,6 +246,11 @@ const SessionPage = () => {
       // ADD BELOW – Teilnehmer direkt beim ersten Laden holen
       if (sessRes.data.is_private) {
         loadLiveParticipants();
+      }
+
+      // === NEU: Direkt nach Session-Live-Status Phase laden ===
+      if (sessRes.data.is_live) {
+        loadCurrentVotingPhase();
       }
 
       // Gast: Kein userId → isHost = false → korrekt
@@ -206,14 +269,97 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/participants`,
-        { headers: getAuthHeaders() }
+        `https://api.tunevote.com/sessions/${sessionId}/participants`,
+        { headers: getAuthHeaders() },
       );
       setLiveParticipants(res.data || []);
     } catch (err) {
       console.error("Failed to load live participants:", err);
     }
   }, [sessionId, session?.is_private]);
+
+  // === NEU: Socket-Event für Phasenwechsel ===
+  // 1. Voting Phase Listener – Dependency auf socketRef.current!
+  useEffect(() => {
+    if (!socketRef.current) return;
+
+    const handler = (data) => {
+      console.log("[Voting Phase] Update vom Server:", data);
+      setVotingPhase({
+        phase: data.phase,
+        endsAt: data.endsAt,
+        duration: data.duration || (data.phase === "suggesting" ? 90 : 60),
+        roundId: data.roundId,
+      });
+      const remaining = Math.max(
+        0,
+        Math.floor((data.endsAt - Date.now()) / 1000),
+      );
+      setTimeRemaining(remaining);
+    };
+
+    socketRef.current.on("voting_phase_changed", handler);
+
+    return () => {
+      socketRef.current?.off("voting_phase_changed", handler);
+    };
+  }, [socketRef.current]); // ← Das ist der entscheidende Fix!
+
+  // 2. Beim Verbindungsaufbau immer die aktuelle Phase laden (Safety Net)
+  useEffect(() => {
+    if (!socketRef.current) return;
+
+    const onConnect = () => {
+      console.log("Socket connected → lade aktuelle Voting-Phase");
+      loadCurrentVotingPhase(); // ← Das ist deine bereits existierende Funktion!
+    };
+
+    socketRef.current.on("connect", onConnect);
+
+    return () => {
+      socketRef.current?.off("connect", onConnect);
+    };
+  }, [socketRef.current, loadCurrentVotingPhase]);
+
+  // === NEU: Countdown-Timer (läuft jede Sekunde) ===
+  useEffect(() => {
+    if (!votingPhase) {
+      setTimeRemaining(0);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeRemaining((prev) => {
+        const now = Date.now();
+        const remaining = Math.max(
+          0,
+          Math.floor((votingPhase.endsAt - now) / 1000),
+        );
+
+        if (remaining <= 0) {
+          clearInterval(timer);
+          // Optional: Phase automatisch zurücksetzen nach "closed" setzen (falls Server verspätet)
+          if (
+            votingPhase.phase === "suggesting" ||
+            votingPhase.phase === "voting"
+          ) {
+            setVotingPhase(null);
+          }
+          return 0;
+        }
+        return remaining;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [votingPhase]);
+
+  // === Hilfsfunktion für schöne Zeitformatierung ===
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   useEffect(() => {
     if (token || guestToken) {
@@ -253,6 +399,9 @@ const SessionPage = () => {
       setSessionLive(true);
       loadSessionData();
 
+      // === NEU: Auch hier Phase laden (falls Socket-Event noch nicht kam) ===
+      loadCurrentVotingPhase();
+
       // WICHTIG: Auch für Gäste syncen!
       if (isLiveJoined && data.firstVideoId) {
         syncPlayback({
@@ -264,14 +413,14 @@ const SessionPage = () => {
     });
 
     socketRef.current.on("playback_sync", (data) => {
-  if (!isLiveJoined) return;
-  syncPlayback(data);
-});
+      if (!isLiveJoined) return;
+      syncPlayback(data);
+    });
 
-// NEU: Echtzeit-Update der Live-Teilnehmer
-socketRef.current.on("live_participants_updated", (participants) => {
-  setLiveParticipants(participants);
-});
+    // NEU: Echtzeit-Update der Live-Teilnehmer
+    socketRef.current.on("live_participants_updated", (participants) => {
+      setLiveParticipants(participants);
+    });
 
     socketRef.current.on("session_ended", ({ message }) => {
       alert(message);
@@ -346,7 +495,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
   // === CACHE LADEN (außerhalb von useEffect!) ===
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:4000/youtube-cache");
+      const res = await axios.get("https://api.tunevote.com/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -359,62 +508,49 @@ socketRef.current.on("live_participants_updated", (participants) => {
     }
   }, []);
 
-  // === AI RECOMMENDATIONS FETCH NUR BEI SONGSTART ===
+  // === KI-EMPFEHLUNGEN NUR Beim Start einer neuen Vorschlagsphase laden ===
   useEffect(() => {
-    if (!isLiveJoined || !currentSong?.videoId) {
+    if (!isLiveJoined || !socketRef.current) {
       setRecommendations([]);
       return;
     }
 
-    const controller = new AbortController();
+    const handleSuggestingPhaseStarted = async (data) => {
+      console.log(
+        "[KI] Neue Vorschlagsphase gestartet → lade Empfehlungen",
+        data,
+      );
 
-    const fetchRec = async () => {
       setRecLoading(true);
       try {
+        console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/recommendations`,
-          { headers: getAuthHeaders(), signal: controller.signal },
+          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
+          { headers: getAuthHeaders() },
         );
-        setRecommendations(res.data);
+        setRecommendations(res.data || []);
       } catch (e) {
-        if (!axios.isCancel(e)) console.warn("rec fetch error", e);
+        console.warn("KI-Empfehlungen konnten nicht geladen werden", e);
+        setRecommendations([]);
       } finally {
         setRecLoading(false);
       }
     };
 
-    fetchRec(); // direkt ausführen, kein setTimeout
+    // Event anhängen
+    socketRef.current.on(
+      "suggesting_phase_started",
+      handleSuggestingPhaseStarted,
+    );
 
+    // Cleanup
     return () => {
-      controller.abort();
+      socketRef.current?.off(
+        "suggesting_phase_started",
+        handleSuggestingPhaseStarted,
+      );
     };
-  }, [isLiveJoined, currentSong, sessionId]);
-
-  const addRecommendation = async (rec) => {
-    if (addingId === rec.youtubeId) return;
-    setAddingId(rec.youtubeId);
-
-    try {
-      const { data: newItem } = await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/recommendations/add`,
-        { youtubeId: rec.youtubeId },
-        { headers: getAuthHeaders() },
-      );
-
-      // Direkt in die Queue einfügen
-      setQueue((prev) => [...prev, newItem]);
-
-      // Empfehlung entfernen
-      setRecommendations((prev) =>
-        prev.filter((r) => r.youtubeId !== rec.youtubeId),
-      );
-    } catch (e) {
-      console.error("Add recommendation error (frontend):", e);
-      alert("Fehler beim Hinzufügen");
-    } finally {
-      setAddingId(null);
-    }
-  };
+  }, [isLiveJoined, sessionId, socketRef.current]);
 
   function extractYouTubeId(url) {
     try {
@@ -459,7 +595,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
       if (youtubeId) {
         try {
           const res = await axios.get(
-            `http://localhost:4000/youtube-info/${youtubeId}`,
+            `https://api.tunevote.com/youtube-info/${youtubeId}`,
           );
           const info = res.data;
 
@@ -538,7 +674,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
               const norm = normalize(title);
 
               await axios.post(
-                "http://localhost:4000/youtube-cache",
+                "https://api.tunevote.com/youtube-cache",
                 { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
                 { headers: getAuthHeaders() },
               );
@@ -553,7 +689,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
             setAiLoading(true);
             try {
               const res = await axios.post(
-                `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+                `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
                 { query },
                 { headers: getAuthHeaders() },
               );
@@ -601,7 +737,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
         modestbranding: 1,
         rel: 0,
         fs: 0,
-        mute: isMutedForMe ? 1 : 0,   // ← NEW
+        mute: isMutedForMe ? 1 : 0, // ← NEW
       },
       events: {
         onReady: () => {
@@ -665,14 +801,14 @@ socketRef.current.on("live_participants_updated", (participants) => {
 
       // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/join-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
 
       // Playback-Sync-Daten abrufen
       const { data } = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
@@ -691,7 +827,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() },
         );
 
@@ -722,7 +858,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
 
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/leave-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -746,7 +882,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
 
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/start`,
+        `https://api.tunevote.com/sessions/${sessionId}/start`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -880,7 +1016,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
           const norm = normalize(title);
 
           await axios.post(
-            "http://localhost:4000/youtube-cache",
+            "https://api.tunevote.com/youtube-cache",
             {
               title_norm: norm,
               title,
@@ -892,7 +1028,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
         }
 
         // Cache neu laden
-        const cacheRes = await axios.get("http://localhost:4000/youtube-cache");
+        const cacheRes = await axios.get("https://api.tunevote.com/youtube-cache");
         setVideoCache(cacheRes.data);
       }
 
@@ -911,7 +1047,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
     setAiLoading(true);
     try {
       const res = await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+        `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
         { query },
         { headers: getAuthHeaders() },
       );
@@ -940,7 +1076,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
 
       await axios
         .post(
-          `http://localhost:4000/sessions/${sessionId}/proposals`,
+          `https://api.tunevote.com/sessions/${sessionId}/proposals`,
           { videoId, title, thumbnail },
           { headers: getAuthHeaders() },
         )
@@ -973,7 +1109,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("http://localhost:4000/guest/join", {
+      const res = await axios.post("https://api.tunevote.com/guest/join", {
         nickname,
       });
 
@@ -1121,37 +1257,83 @@ socketRef.current.on("live_participants_updated", (participants) => {
           )}
         </div>
 
-        {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
-          {isHost && session?.is_private === 1 && (
-            <div className="bg-white p-4 rounded-lg shadow mb-6">
-              <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
-              <div className="flex gap-3 items-center">
-                <input
-                  type="email"
-                  placeholder="email@beispiel.de"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendInvite()}
-                  className="flex-1 border rounded-lg px-3 py-2"
-                />
-                <button
-                  onClick={sendInvite}
-                  disabled={!inviteEmail.trim()}
-                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                  Einladen
-                </button>
-              </div>
-              {inviteStatus === "success" && (
-                <p className="text-green-600 text-sm mt-2">Einladung verschickt!</p>
+        {/* === NEUE RESTZEIT-ANZEIGE – direkt nach dem QR-Code/Join-Live-Bereich === */}
+        {sessionLive && votingPhase && timeRemaining > 0 && (
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold mb-2">
+              {votingPhase.phase === "suggesting" ? (
+                <>Songvorschläge einreichen</>
+              ) : (
+                <>Abstimmung läuft</>
               )}
-              {inviteStatus === "error" && (
-                <p className="text-red-600 text-sm mt-2">
-                  Ungültige E-Mail oder Fehler beim Versand.
-                </p>
-              )}
+            </h2>
+            <div className="text-5xl font-mono font-bold tracking-wider mb-3">
+              {formatTime(timeRemaining)}
             </div>
-          )}
+            <div className="bg-white/20 h-3 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-1000 ease-linear ${
+                  votingPhase.phase === "suggesting"
+                    ? "bg-green-400"
+                    : "bg-orange-400"
+                }`}
+                style={{
+                  width: `${
+                    ((votingPhase.duration - timeRemaining) /
+                      votingPhase.duration) *
+                    100
+                  }%`,
+                }}
+              />
+            </div>
+            <p className="mt-3 text-sm opacity-90">
+              {votingPhase.phase === "suggesting"
+                ? "Schlage jetzt deinen Song vor!"
+                : "Stimme für deinen Favoriten ab!"}
+            </p>
+          </div>
+        )}
+
+        {/* Optional: Hinweis, wenn gerade keine Phase aktiv ist */}
+        {sessionLive && !votingPhase && isLiveJoined && (
+          <div className="bg-gray-100 text-gray-700 p-4 rounded-lg text-center mb-6">
+            <p>Warte auf nächste Abstimmungsrunde…</p>
+          </div>
+        )}
+
+        {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
+        {isHost && session?.is_private === 1 && (
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
+            <div className="flex gap-3 items-center">
+              <input
+                type="email"
+                placeholder="email@beispiel.de"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendInvite()}
+                className="flex-1 border rounded-lg px-3 py-2"
+              />
+              <button
+                onClick={sendInvite}
+                disabled={!inviteEmail.trim()}
+                className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Einladen
+              </button>
+            </div>
+            {inviteStatus === "success" && (
+              <p className="text-green-600 text-sm mt-2">
+                Einladung verschickt!
+              </p>
+            )}
+            {inviteStatus === "error" && (
+              <p className="text-red-600 text-sm mt-2">
+                Ungültige E-Mail oder Fehler beim Versand.
+              </p>
+            )}
+          </div>
+        )}
 
         {sessionLive && isLiveJoined && (
           <>
@@ -1202,14 +1384,18 @@ socketRef.current.on("live_participants_updated", (participants) => {
             </h3>
             <div className="space-y-2">
               {liveParticipants.map((p, i) => (
-  <div key={i} className="flex items-center gap-2 text-sm">
-    <span className="text-green-600">●</span>
-    <span>
-      {p.name}
-      {p.isHost && <span className="ml-1 text-indigo-600 font-semibold">Host</span>}
-    </span>
-  </div>
-))}
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-green-600">●</span>
+                  <span>
+                    {p.name}
+                    {p.isHost && (
+                      <span className="ml-1 text-indigo-600 font-semibold">
+                        Host
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1296,7 +1482,7 @@ socketRef.current.on("live_participants_updated", (participants) => {
               onClick={async () => {
                 try {
                   await axios.post(
-                    `http://localhost:4000/sessions/${sessionId}/proposals`,
+                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
                     {
                       item_type: "pause",
                       duration: pauseDuration,
@@ -1376,20 +1562,47 @@ socketRef.current.on("live_participants_updated", (participants) => {
                     </div>
 
                     {/* Vote Button with Animations */}
-                    <button
-                      onClick={() => voteSong(song.id)}
-                      className={`
-                min-w-[60px] px-3 py-1 rounded-lg font-semibold transition-all
-                transform active:scale-90 
-                ${
-                  song.userHasVoted
-                    ? "bg-green-600 text-white shadow-md scale-110 animate-[pop_0.3s_ease-out]"
-                    : "bg-gray-300 text-gray-700 hover:bg-green-500 hover:text-white"
-                }
-              `}
-                    >
-                      👍 {song.votes}
-                    </button>
+                    {/* Vote Button – NUR in der Voting-Phase anzeigen! */}
+                    {votingPhase?.phase === "voting" ? (
+                      <button
+                        onClick={() => voteSong(song.id)}
+                        disabled={song.userHasVoted && song.votes === 0} // optional: deaktivieren wenn schon abgestimmt
+                        className={`
+      min-w-[60px] px-4 py-2 rounded-lg font-bold transition-all transform active:scale-95
+      ${
+        song.userHasVoted
+          ? "bg-green-600 text-white shadow-lg"
+          : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
+      }
+    `}
+                      >
+                        {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} (
+                        {song.votes})
+                      </button>
+                    ) : (
+                      <div className="text-gray-500 text-sm italic">
+                        {votingPhase?.phase === "suggesting" ? (
+                          <>
+                            Vorschlagsphase – Abstimmung startet gleich!
+                            {/* Nur der Ersteller darf löschen – KI-Vorschläge ausgeschlossen */}
+                            {song.itemSource !== "ai" &&
+                              song.addedBy === displayName && (
+                                <button
+                                  onClick={() =>
+                                    removeSongFromSuggestions(song.id)
+                                  }
+                                  className="ml-4 px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full hover:bg-red-200 transition font-medium"
+                                  title="Dein Vorschlag – klicke zum Entfernen"
+                                >
+                                  ✕ Entfernen
+                                </button>
+                              )}
+                          </>
+                        ) : (
+                          "Warte auf nächste Runde"
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>

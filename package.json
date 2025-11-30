@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
     "axios": "^1.12.2",
+    "bcryptjs": "^3.0.3",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.548.0",
     "qrcode.react": "^4.2.0",
