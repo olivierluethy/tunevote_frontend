@@ -6,7 +6,6 @@ import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 import { PencilSquareIcon } from "@heroicons/react/24/outline";
 
-
 const SOCKET_SERVER = "http://localhost:4000";
 
 const SessionPage = () => {
@@ -31,6 +30,9 @@ const SessionPage = () => {
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState(""); // "success" | "error" | ""
+
+  const [acceptedInvites, setAcceptedInvites] = useState([]); // <-- neu
+const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimation
 
   // Voting
   const [votingRound, setVotingRound] = useState(null);
@@ -75,8 +77,8 @@ const SessionPage = () => {
   const username = localStorage.getItem("username") || "User";
 
   const [isEditingName, setIsEditingName] = useState(false);
-const [editingName, setEditingName] = useState("");
-const [savingName, setSavingName] = useState(false);
+  const [editingName, setEditingName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   // Klare Unterscheidung
   const isGuest = !token && guestToken;
@@ -139,37 +141,37 @@ const [savingName, setSavingName] = useState(false);
   }, [sessionId, sessionLive]);
 
   const saveSessionName = async () => {
-  const newName = editingName.trim();
-  if (!newName || newName === session.title) {
+    const newName = editingName.trim();
+    if (!newName || newName === session.title) {
+      setIsEditingName(false);
+      return;
+    }
+
+    // 1. Optimistic Update – sofort sichtbar!
+    setSession((prev) => ({ ...prev, title: newName }));
     setIsEditingName(false);
-    return;
-  }
 
-  // 1. Optimistic Update – sofort sichtbar!
-  setSession(prev => ({ ...prev, title: newName }));
-  setIsEditingName(false);
+    setSavingName(true);
+    try {
+      await axios.patch(
+        `http://localhost:4000/sessions/${sessionId}`,
+        { title: newName },
+        { headers: getAuthHeaders() },
+      );
 
-  setSavingName(true);
-  try {
-    await axios.patch(
-      `http://localhost:4000/sessions/${sessionId}`,
-      { title: newName },
-      { headers: getAuthHeaders() }
-    );
+      // Optional: Falls Server einen anderen (z. B. getrimmten) Titel zurückgibt
+      // → könntest du hier nochmal loadSessionData() machen
+      // Aber in 99 % der Fälle ist es identisch → unnötig
+    } catch (err) {
+      console.error("Fehler beim Umbenennen:", err);
+      alert("Fehler: Name konnte nicht gespeichert werden.");
 
-    // Optional: Falls Server einen anderen (z. B. getrimmten) Titel zurückgibt
-    // → könntest du hier nochmal loadSessionData() machen
-    // Aber in 99 % der Fälle ist es identisch → unnötig
-  } catch (err) {
-    console.error("Fehler beim Umbenennen:", err);
-    alert("Fehler: Name konnte nicht gespeichert werden.");
-
-    // 2. Rollback bei Fehler – ganz wichtig!
-    await loadSessionData(); // Holt den alten (korrekten) Stand vom Server
-  } finally {
-    setSavingName(false);
-  }
-};
+      // 2. Rollback bei Fehler – ganz wichtig!
+      await loadSessionData(); // Holt den alten (korrekten) Stand vom Server
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const removeSongFromSuggestions = async (proposalId) => {
     if (!window.confirm("Deinen Vorschlag wirklich entfernen?")) return;
@@ -238,6 +240,7 @@ const [savingName, setSavingName] = useState(false);
       setInviteStatus("success");
       setInviteEmail("");
       setTimeout(() => setInviteStatus(""), 3000);
+      await loadSessionData(); // ← Das reicht völlig aus und ist sauberer!
     } catch (err) {
       console.error("Invite failed:", err);
       setInviteStatus("error");
@@ -290,6 +293,20 @@ const [savingName, setSavingName] = useState(false);
       // === NEU: Direkt nach Session-Live-Status Phase laden ===
       if (sessRes.data.is_live) {
         loadCurrentVotingPhase();
+      }
+
+            // Lade akzeptierte Einladungen (nur bei privaten Sessions)
+      if (sessRes.data.is_private === 1) {
+        try {
+          const invitesRes = await axios.get(
+            `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
+            { headers: getAuthHeaders() }
+          );
+          setAcceptedInvites(invitesRes.data || []);
+        } catch (err) {
+          console.error("Fehler beim Laden der akzeptierten Einladungen:", err);
+          setAcceptedInvites([]); // fallback
+        }
       }
 
       // Gast: Kein userId → isHost = false → korrekt
@@ -1193,67 +1210,72 @@ const [savingName, setSavingName] = useState(false);
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-
-
-
         <h1 className="text-3xl font-bold text-blue-700 flex items-center gap-3 mb-6">
-  Session: {session.title}
+          <div className="mb-6">
+  <button
+    onClick={() => window.location.href = "/dashboard"}
+    className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 hover:text-gray-900 transition-all duration-200 font-medium shadow-md active:scale-95"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    </svg>
+    Back
+  </button>
+</div>
+          Session: {session.title}
+          {/* Nur Host darf bearbeiten */}
+          {isHost && (
+            <button
+              onClick={() => {
+                setEditingName(session.title);
+                setIsEditingName(true);
+              }}
+              className="text-blue-600 hover:text-blue-800 transition opacity-70 hover:opacity-100"
+              title="Session-Namen bearbeiten"
+            >
+              <PencilSquareIcon className="w-6 h-6" />
+            </button>
+          )}
+        </h1>
 
-  {/* Nur Host darf bearbeiten */}
-  {isHost && (
-    <button
-      onClick={() => {
-        setEditingName(session.title);
-        setIsEditingName(true);
-      }}
-      className="text-blue-600 hover:text-blue-800 transition opacity-70 hover:opacity-100"
-      title="Session-Namen bearbeiten"
-    >
-      <PencilSquareIcon className="w-6 h-6" />
-    </button>
-  )}
-</h1>
+        {/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
+        {isEditingName && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                Session-Namen bearbeiten
+              </h2>
 
-{/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
-{isEditingName && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">
-        Session-Namen bearbeiten
-      </h2>
+              <input
+                type="text"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoFocus
+                placeholder="Neuer Name..."
+              />
 
-      <input
-        type="text"
-        value={editingName}
-        onChange={(e) => setEditingName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        autoFocus
-        placeholder="Neuer Name..."
-      />
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={saveSessionName}
+                  disabled={savingName || !editingName.trim()}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-md"
+                >
+                  {savingName ? "Speichert…" : "Speichern"}
+                </button>
 
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={saveSessionName}
-          disabled={savingName || !editingName.trim()}
-          className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-md"
-        >
-          {savingName ? "Speichert…" : "Speichern"}
-        </button>
-
-        <button
-          onClick={() => setIsEditingName(false)}
-          disabled={savingName}
-          className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
-        >
-          Abbrechen
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-
+                <button
+                  onClick={() => setIsEditingName(false)}
+                  disabled={savingName}
+                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
           <QRCodeCanvas value={window.location.href} size={100} />
@@ -1398,6 +1420,80 @@ const [savingName, setSavingName] = useState(false);
               <p className="text-red-600 text-sm mt-2">
                 Ungültige E-Mail oder Fehler beim Versand.
               </p>
+            )}
+          </div>
+        )}
+
+                {/* TEILNEHMER VERWALTEN – nur Host + private Session */}
+        {isHost && session?.is_private === 1 && (
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                Teilnehmer verwalten
+              </span>
+              <span className="text-sm font-normal text-gray-500">
+                {acceptedInvites.length} akzeptiert
+              </span>
+            </h3>
+
+            {acceptedInvites.length === 0 ? (
+              <p className="text-gray-500 text-center py-6">
+                Noch niemand hat die Einladung angenommen.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {acceptedInvites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                        {invite.invitee_name?.[0]?.toUpperCase() || invite.invitee_email[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-800">
+                          {invite.invitee_name || "Unbenannt"}
+                        </p>
+                        <p className="text-sm text-gray-600">{invite.invitee_email}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`"${invite.invitee_name || invite.invitee_email}" wirklich entfernen?`)) return;
+
+                        setRemovingUserId(invite.id);
+                        try {
+                          await axios.delete(
+                            `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
+                            { headers: getAuthHeaders() }
+                          );
+                          setAcceptedInvites(prev => prev.filter(i => i.id !== invite.id));
+                        } catch (err) {
+                          console.error(err);
+                          alert("Fehler beim Entfernen des Teilnehmers");
+                        } finally {
+                          setRemovingUserId(null);
+                        }
+                      }}
+                      disabled={removingUserId === invite.id}
+                      className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 transition font-medium flex items-center gap-2"
+                    >
+                      {removingUserId === invite.id ? (
+                        <>Wird entfernt…</>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                          Entfernen
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
