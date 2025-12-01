@@ -69,7 +69,7 @@ export default function Home() {
   // ✅ handleJoinSession ruft die Backend-Route auf
   const handleJoinSession = async () => {
     try {
-      const res = await fetch("https://api.tunevote.com/join");
+      const res = await fetch("http://localhost:4000/join");
       const data = await res.json();
 
       if (data.redirect) {
