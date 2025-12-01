@@ -24,7 +24,7 @@ export default function Register() {
   setSuccess(false);
 
   try {
-    const res = await axios.post("https://api.tunevote.com/register", {
+    const res = await axios.post("http://localhost:4000/register", {
       username,
       email,
       password,

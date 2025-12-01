@@ -4,8 +4,10 @@ import axios from "axios";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
+import { PencilSquareIcon } from "@heroicons/react/24/outline";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+
+const SOCKET_SERVER = "http://localhost:4000";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -72,6 +74,10 @@ const SessionPage = () => {
   const userId = localStorage.getItem("userId");
   const username = localStorage.getItem("username") || "User";
 
+  const [isEditingName, setIsEditingName] = useState(false);
+const [editingName, setEditingName] = useState("");
+const [savingName, setSavingName] = useState(false);
+
   // Klare Unterscheidung
   const isGuest = !token && guestToken;
   const isLoggedIn = !!token;
@@ -104,7 +110,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
+        `http://localhost:4000/sessions/${sessionId}/current-phase`,
         { headers: getAuthHeaders() },
       );
 
@@ -132,12 +138,45 @@ const SessionPage = () => {
     }
   }, [sessionId, sessionLive]);
 
+  const saveSessionName = async () => {
+  const newName = editingName.trim();
+  if (!newName || newName === session.title) {
+    setIsEditingName(false);
+    return;
+  }
+
+  // 1. Optimistic Update – sofort sichtbar!
+  setSession(prev => ({ ...prev, title: newName }));
+  setIsEditingName(false);
+
+  setSavingName(true);
+  try {
+    await axios.patch(
+      `http://localhost:4000/sessions/${sessionId}`,
+      { title: newName },
+      { headers: getAuthHeaders() }
+    );
+
+    // Optional: Falls Server einen anderen (z. B. getrimmten) Titel zurückgibt
+    // → könntest du hier nochmal loadSessionData() machen
+    // Aber in 99 % der Fälle ist es identisch → unnötig
+  } catch (err) {
+    console.error("Fehler beim Umbenennen:", err);
+    alert("Fehler: Name konnte nicht gespeichert werden.");
+
+    // 2. Rollback bei Fehler – ganz wichtig!
+    await loadSessionData(); // Holt den alten (korrekten) Stand vom Server
+  } finally {
+    setSavingName(false);
+  }
+};
+
   const removeSongFromSuggestions = async (proposalId) => {
     if (!window.confirm("Deinen Vorschlag wirklich entfernen?")) return;
 
     try {
       await axios.delete(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
         { headers: getAuthHeaders() },
       );
 
@@ -156,7 +195,7 @@ const SessionPage = () => {
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() },
       );
       setProposals(res.data || []);
@@ -168,7 +207,7 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -192,7 +231,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/invite`,
+        `http://localhost:4000/sessions/${sessionId}/invite`,
         { email: inviteEmail },
         { headers: getAuthHeaders() },
       );
@@ -212,7 +251,7 @@ const SessionPage = () => {
 
     if (!guestToken) {
       try {
-        const { data } = await axios.post("https://api.tunevote.com/guest/join", {
+        const { data } = await axios.post("http://localhost:4000/guest/join", {
           nickname,
         });
         guestToken = data.guestToken;
@@ -230,10 +269,10 @@ const SessionPage = () => {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -269,7 +308,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/participants`,
+        `http://localhost:4000/sessions/${sessionId}/participants`,
         { headers: getAuthHeaders() },
       );
       setLiveParticipants(res.data || []);
@@ -495,7 +534,7 @@ const SessionPage = () => {
   // === CACHE LADEN (außerhalb von useEffect!) ===
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/youtube-cache");
+      const res = await axios.get("http://localhost:4000/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -525,7 +564,7 @@ const SessionPage = () => {
       try {
         console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
           { headers: getAuthHeaders() },
         );
         setRecommendations(res.data || []);
@@ -595,7 +634,7 @@ const SessionPage = () => {
       if (youtubeId) {
         try {
           const res = await axios.get(
-            `https://api.tunevote.com/youtube-info/${youtubeId}`,
+            `http://localhost:4000/youtube-info/${youtubeId}`,
           );
           const info = res.data;
 
@@ -674,7 +713,7 @@ const SessionPage = () => {
               const norm = normalize(title);
 
               await axios.post(
-                "https://api.tunevote.com/youtube-cache",
+                "http://localhost:4000/youtube-cache",
                 { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
                 { headers: getAuthHeaders() },
               );
@@ -689,7 +728,7 @@ const SessionPage = () => {
             setAiLoading(true);
             try {
               const res = await axios.post(
-                `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+                `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
                 { query },
                 { headers: getAuthHeaders() },
               );
@@ -801,14 +840,14 @@ const SessionPage = () => {
 
       // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
 
       // Playback-Sync-Daten abrufen
       const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
@@ -827,7 +866,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() },
         );
 
@@ -858,7 +897,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -882,7 +921,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
+        `http://localhost:4000/sessions/${sessionId}/start`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -1016,7 +1055,7 @@ const SessionPage = () => {
           const norm = normalize(title);
 
           await axios.post(
-            "https://api.tunevote.com/youtube-cache",
+            "http://localhost:4000/youtube-cache",
             {
               title_norm: norm,
               title,
@@ -1028,7 +1067,7 @@ const SessionPage = () => {
         }
 
         // Cache neu laden
-        const cacheRes = await axios.get("https://api.tunevote.com/youtube-cache");
+        const cacheRes = await axios.get("http://localhost:4000/youtube-cache");
         setVideoCache(cacheRes.data);
       }
 
@@ -1047,7 +1086,7 @@ const SessionPage = () => {
     setAiLoading(true);
     try {
       const res = await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
         { query },
         { headers: getAuthHeaders() },
       );
@@ -1076,7 +1115,7 @@ const SessionPage = () => {
 
       await axios
         .post(
-          `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+          `http://localhost:4000/sessions/${sessionId}/proposals`,
           { videoId, title, thumbnail },
           { headers: getAuthHeaders() },
         )
@@ -1109,7 +1148,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
+      const res = await axios.post("http://localhost:4000/guest/join", {
         nickname,
       });
 
@@ -1154,39 +1193,67 @@ const SessionPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-blue-700">
-            Session: {session.title}
-          </h1>
-          <div className="flex items-center gap-4">
-            {sessionLive ? (
-              <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
-                Live
-              </div>
-            ) : (
-              <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
-                Warte auf Host
-              </div>
-            )}
-            {isHost && !sessionLive && (
-              <button
-                onClick={startSession}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Start Session
-              </button>
-            )}
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="text-gray-600"
-            >
-              ← Zurück
-            </button>
-            {isGuest && (
-              <div className="text-sm text-gray-500">Gast: {displayName}</div>
-            )}
-          </div>
-        </div>
+
+
+
+        <h1 className="text-3xl font-bold text-blue-700 flex items-center gap-3 mb-6">
+  Session: {session.title}
+
+  {/* Nur Host darf bearbeiten */}
+  {isHost && (
+    <button
+      onClick={() => {
+        setEditingName(session.title);
+        setIsEditingName(true);
+      }}
+      className="text-blue-600 hover:text-blue-800 transition opacity-70 hover:opacity-100"
+      title="Session-Namen bearbeiten"
+    >
+      <PencilSquareIcon className="w-6 h-6" />
+    </button>
+  )}
+</h1>
+
+{/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
+{isEditingName && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">
+        Session-Namen bearbeiten
+      </h2>
+
+      <input
+        type="text"
+        value={editingName}
+        onChange={(e) => setEditingName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
+        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        autoFocus
+        placeholder="Neuer Name..."
+      />
+
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={saveSessionName}
+          disabled={savingName || !editingName.trim()}
+          className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-md"
+        >
+          {savingName ? "Speichert…" : "Speichern"}
+        </button>
+
+        <button
+          onClick={() => setIsEditingName(false)}
+          disabled={savingName}
+          className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+        >
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
 
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
           <QRCodeCanvas value={window.location.href} size={100} />
@@ -1482,7 +1549,7 @@ const SessionPage = () => {
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
                     {
                       item_type: "pause",
                       duration: pauseDuration,
