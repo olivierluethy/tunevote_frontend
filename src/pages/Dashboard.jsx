@@ -129,33 +129,46 @@ export default function Dashboard() {
     }
   }, [isLoggedIn]);
 
-  const acceptInvite = async (inviteId) => {
+    const acceptInvite = async (inviteId) => {
     try {
       await axios.post(
         `http://localhost:4000/invites/${inviteId}/accept`,
         {},
-        {
-          headers: getAuthHeaders(),
-        },
+        { headers: getAuthHeaders() }
       );
-      fetchReceivedInvites(); // aktualisieren
+
+      // SOFORT aus der Liste entfernen (optimistic update – sieht blitzschnell aus!)
+      setReceivedInvites(prev => prev.filter(i => i.id !== inviteId));
+
+      // Optional: Sessions neu laden – dann erscheint die Session sofort unter "Aktive Sessions"
+      fetchSessions();
+
+      // Alternativ: Nur die empfangene Liste neu laden (langsamer, aber sicher)
+      // fetchReceivedInvites();
+
     } catch (err) {
-      alert("Fehler beim Akzeptieren");
+      console.error("Fehler beim Akzeptieren:", err);
+      alert("Fehler beim Akzeptieren der Einladung");
+      // Bei Fehler wieder laden, falls was schief ging
+      fetchReceivedInvites();
     }
   };
 
-  const rejectInvite = async (inviteId) => {
+    const rejectInvite = async (inviteId) => {
     try {
       await axios.post(
         `http://localhost:4000/invites/${inviteId}/reject`,
         {},
-        {
-          headers: getAuthHeaders(),
-        },
+        { headers: getAuthHeaders() }
       );
-      fetchReceivedInvites(); // aktualisieren
+
+      // Sofort aus UI entfernen
+      setReceivedInvites(prev => prev.filter(i => i.id !== inviteId));
+
     } catch (err) {
+      console.error("Fehler beim Ablehnen:", err);
       alert("Fehler beim Ablehnen");
+      fetchReceivedInvites();
     }
   };
 

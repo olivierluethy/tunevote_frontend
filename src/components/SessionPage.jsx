@@ -434,7 +434,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
     }
   }, [loadSessionData, loadProposals, token, guestToken]); // ← loadProposals hinzugefügt
 
-  // === Socket.IO ===
+    // === Socket.IO ===
   useEffect(() => {
     if (!token && !guestToken) return;
 
@@ -443,6 +443,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       auth: token ? { token } : { guestToken },
     });
 
+    // BESTEHENDE EVENTS (bleiben unverändert)
     socketRef.current.on("connect_error", (err) =>
       console.warn("Socket error", err),
     );
@@ -454,11 +455,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       console.log("Session started broadcast:", data);
       setSessionLive(true);
       loadSessionData();
-
-      // === NEU: Auch hier Phase laden (falls Socket-Event noch nicht kam) ===
       loadCurrentVotingPhase();
-
-      // WICHTIG: Auch für Gäste syncen!
       if (isLiveJoined && data.firstVideoId) {
         syncPlayback({
           current_video_id: data.firstVideoId,
@@ -473,7 +470,6 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       syncPlayback(data);
     });
 
-    // NEU: Echtzeit-Update der Live-Teilnehmer
     socketRef.current.on("live_participants_updated", (participants) => {
       setLiveParticipants(participants);
     });
@@ -489,7 +485,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
         playerRef.current.destroy();
         playerRef.current = null;
       }
-      loadSessionData(); // Reload to restore UI
+      loadSessionData();
     });
 
     socketRef.current.on("pause_started", ({ title, duration, startTime }) => {
@@ -498,12 +494,10 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       setPauseTitle(title);
       setPauseRemaining(duration);
 
-      // YouTube-Player pausieren
       if (playerRef.current) {
         playerRef.current.pauseVideo();
       }
 
-      // Timer-Countdown im Frontend starten
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
       pauseTimerRef.current = setInterval(() => {
         setPauseRemaining((prev) => {
@@ -523,15 +517,38 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       setPauseTitle("");
 
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
-
-      // Nach der Pause wieder Musik starten
       if (playerRef.current) {
         playerRef.current.playVideo();
       }
     });
 
-    return () => socketRef.current.disconnect();
-  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined, isHost]);
+    // NEU: Host tritt dem speziellen Raum bei
+    if (isHost && sessionId) {
+      socketRef.current.emit("join-session-host", sessionId);
+      console.log("[Socket] Host joined room: session-host-" + sessionId);
+    }
+
+    // NEU: Auf neue akzeptierte Einladung hören
+    const handleInviteAccepted = (newInvite) => {
+      console.log("[Realtime] Neue akzeptierte Einladung:", newInvite);
+      setAcceptedInvites((prev) => {
+        if (prev.some(i => i.id === newInvite.id)) return prev;
+        return [...prev, newInvite].sort((a, b) =>
+          new Date(b.accepted_at) - new Date(a.accepted_at)
+        );
+      });
+    };
+    socketRef.current.on("invite:accepted", handleInviteAccepted);
+
+    return () => {
+      // Beim Verlassen Raum verlassen + Listener entfernen
+      if (isHost && sessionId) {
+        socketRef.current.emit("leave-session-host", sessionId);
+      }
+      socketRef.current.off("invite:accepted", handleInviteAccepted);
+      socketRef.current.disconnect();
+    };
+  }, [sessionId, token, guestToken, isHost, loadSessionData, isLiveJoined]);
 
   // === YouTube Player API laden ===
   useEffect(() => {
