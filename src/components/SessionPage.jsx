@@ -4,8 +4,9 @@ import axios from "axios";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
+import { PencilSquareIcon } from "@heroicons/react/24/outline";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "http://localhost:4000";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -29,6 +30,9 @@ const SessionPage = () => {
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState(""); // "success" | "error" | ""
+
+  const [acceptedInvites, setAcceptedInvites] = useState([]); // <-- neu
+  const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimation
 
   // Voting
   const [votingRound, setVotingRound] = useState(null);
@@ -72,6 +76,10 @@ const SessionPage = () => {
   const userId = localStorage.getItem("userId");
   const username = localStorage.getItem("username") || "User";
 
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
   // Klare Unterscheidung
   const isGuest = !token && guestToken;
   const isLoggedIn = !!token;
@@ -104,7 +112,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
+        `http://localhost:4000/sessions/${sessionId}/current-phase`,
         { headers: getAuthHeaders() },
       );
 
@@ -132,12 +140,45 @@ const SessionPage = () => {
     }
   }, [sessionId, sessionLive]);
 
+  const saveSessionName = async () => {
+    const newName = editingName.trim();
+    if (!newName || newName === session.title) {
+      setIsEditingName(false);
+      return;
+    }
+
+    // 1. Optimistic Update – sofort sichtbar!
+    setSession((prev) => ({ ...prev, title: newName }));
+    setIsEditingName(false);
+
+    setSavingName(true);
+    try {
+      await axios.patch(
+        `http://localhost:4000/sessions/${sessionId}`,
+        { title: newName },
+        { headers: getAuthHeaders() },
+      );
+
+      // Optional: Falls Server einen anderen (z. B. getrimmten) Titel zurückgibt
+      // → könntest du hier nochmal loadSessionData() machen
+      // Aber in 99 % der Fälle ist es identisch → unnötig
+    } catch (err) {
+      console.error("Fehler beim Umbenennen:", err);
+      alert("Fehler: Name konnte nicht gespeichert werden.");
+
+      // 2. Rollback bei Fehler – ganz wichtig!
+      await loadSessionData(); // Holt den alten (korrekten) Stand vom Server
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const removeSongFromSuggestions = async (proposalId) => {
     if (!window.confirm("Deinen Vorschlag wirklich entfernen?")) return;
 
     try {
       await axios.delete(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
         { headers: getAuthHeaders() },
       );
 
@@ -156,7 +197,7 @@ const SessionPage = () => {
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() },
       );
       setProposals(res.data || []);
@@ -168,7 +209,7 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -192,13 +233,14 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/invite`,
+        `http://localhost:4000/sessions/${sessionId}/invite`,
         { email: inviteEmail },
         { headers: getAuthHeaders() },
       );
       setInviteStatus("success");
       setInviteEmail("");
       setTimeout(() => setInviteStatus(""), 3000);
+      await loadSessionData(); // ← Das reicht völlig aus und ist sauberer!
     } catch (err) {
       console.error("Invite failed:", err);
       setInviteStatus("error");
@@ -212,7 +254,7 @@ const SessionPage = () => {
 
     if (!guestToken) {
       try {
-        const { data } = await axios.post("https://api.tunevote.com/guest/join", {
+        const { data } = await axios.post("http://localhost:4000/guest/join", {
           nickname,
         });
         guestToken = data.guestToken;
@@ -230,10 +272,10 @@ const SessionPage = () => {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -253,6 +295,20 @@ const SessionPage = () => {
         loadCurrentVotingPhase();
       }
 
+      // Lade akzeptierte Einladungen (nur bei privaten Sessions)
+      if (sessRes.data.is_private === 1) {
+        try {
+          const invitesRes = await axios.get(
+            `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
+            { headers: getAuthHeaders() },
+          );
+          setAcceptedInvites(invitesRes.data || []);
+        } catch (err) {
+          console.error("Fehler beim Laden der akzeptierten Einladungen:", err);
+          setAcceptedInvites([]); // fallback
+        }
+      }
+
       // Gast: Kein userId → isHost = false → korrekt
     } catch (err) {
       console.error(err);
@@ -269,7 +325,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/participants`,
+        `http://localhost:4000/sessions/${sessionId}/participants`,
         { headers: getAuthHeaders() },
       );
       setLiveParticipants(res.data || []);
@@ -382,11 +438,12 @@ const SessionPage = () => {
   useEffect(() => {
     if (!token && !guestToken) return;
 
-    socketRef.current = io(SOCKET_SERVER, {
+        socketRef.current = io(SOCKET_SERVER, {
       query: { sessionId },
       auth: token ? { token } : { guestToken },
     });
 
+    // BESTEHENDE EVENTS (bleiben unverändert)
     socketRef.current.on("connect_error", (err) =>
       console.warn("Socket error", err),
     );
@@ -398,11 +455,7 @@ const SessionPage = () => {
       console.log("Session started broadcast:", data);
       setSessionLive(true);
       loadSessionData();
-
-      // === NEU: Auch hier Phase laden (falls Socket-Event noch nicht kam) ===
       loadCurrentVotingPhase();
-
-      // WICHTIG: Auch für Gäste syncen!
       if (isLiveJoined && data.firstVideoId) {
         syncPlayback({
           current_video_id: data.firstVideoId,
@@ -417,7 +470,6 @@ const SessionPage = () => {
       syncPlayback(data);
     });
 
-    // NEU: Echtzeit-Update der Live-Teilnehmer
     socketRef.current.on("live_participants_updated", (participants) => {
       setLiveParticipants(participants);
     });
@@ -433,7 +485,7 @@ const SessionPage = () => {
         playerRef.current.destroy();
         playerRef.current = null;
       }
-      loadSessionData(); // Reload to restore UI
+      loadSessionData();
     });
 
     socketRef.current.on("pause_started", ({ title, duration, startTime }) => {
@@ -442,12 +494,10 @@ const SessionPage = () => {
       setPauseTitle(title);
       setPauseRemaining(duration);
 
-      // YouTube-Player pausieren
       if (playerRef.current) {
         playerRef.current.pauseVideo();
       }
 
-      // Timer-Countdown im Frontend starten
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
       pauseTimerRef.current = setInterval(() => {
         setPauseRemaining((prev) => {
@@ -467,15 +517,38 @@ const SessionPage = () => {
       setPauseTitle("");
 
       if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
-
-      // Nach der Pause wieder Musik starten
       if (playerRef.current) {
         playerRef.current.playVideo();
       }
     });
 
-    return () => socketRef.current.disconnect();
-  }, [sessionId, token, guestToken, loadSessionData, isLiveJoined, isHost]);
+    // NEU: Host tritt dem speziellen Raum bei
+    if (isHost && sessionId) {
+      socketRef.current.emit("join-session-host", sessionId);
+      console.log("[Socket] Host joined room: session-host-" + sessionId);
+    }
+
+    // NEU: Auf neue akzeptierte Einladung hören
+    const handleInviteAccepted = (newInvite) => {
+      console.log("[Realtime] Neue akzeptierte Einladung:", newInvite);
+      setAcceptedInvites((prev) => {
+        if (prev.some((i) => i.id === newInvite.id)) return prev;
+        return [...prev, newInvite].sort(
+          (a, b) => new Date(b.accepted_at) - new Date(a.accepted_at),
+        );
+      });
+    };
+    socketRef.current.on("invite:accepted", handleInviteAccepted);
+
+    return () => {
+      // Beim Verlassen Raum verlassen + Listener entfernen
+      if (isHost && sessionId) {
+        socketRef.current.emit("leave-session-host", sessionId);
+      }
+      socketRef.current.off("invite:accepted", handleInviteAccepted);
+      socketRef.current.disconnect();
+    };
+  }, [sessionId, token, guestToken, isHost, loadSessionData, isLiveJoined]);
 
   // === YouTube Player API laden ===
   useEffect(() => {
@@ -495,7 +568,7 @@ const SessionPage = () => {
   // === CACHE LADEN (außerhalb von useEffect!) ===
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/youtube-cache");
+      const res = await axios.get("http://localhost:4000/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -525,7 +598,7 @@ const SessionPage = () => {
       try {
         console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
           { headers: getAuthHeaders() },
         );
         setRecommendations(res.data || []);
@@ -595,7 +668,7 @@ const SessionPage = () => {
       if (youtubeId) {
         try {
           const res = await axios.get(
-            `https://api.tunevote.com/youtube-info/${youtubeId}`,
+            `http://localhost:4000/youtube-info/${youtubeId}`,
           );
           const info = res.data;
 
@@ -674,7 +747,7 @@ const SessionPage = () => {
               const norm = normalize(title);
 
               await axios.post(
-                "https://api.tunevote.com/youtube-cache",
+                "http://localhost:4000/youtube-cache",
                 { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
                 { headers: getAuthHeaders() },
               );
@@ -689,7 +762,7 @@ const SessionPage = () => {
             setAiLoading(true);
             try {
               const res = await axios.post(
-                `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+                `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
                 { query },
                 { headers: getAuthHeaders() },
               );
@@ -801,20 +874,21 @@ const SessionPage = () => {
 
       // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
 
       // Playback-Sync-Daten abrufen
       const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
       if (data.current_video_id && data.video_start_time) {
         syncPlayback(data);
       }
+
     } catch (err) {
       console.error("Join Live failed", err);
       setIsLiveJoined(false);
@@ -827,7 +901,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() },
         );
 
@@ -858,7 +932,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -882,7 +956,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
+        `http://localhost:4000/sessions/${sessionId}/start`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -1016,7 +1090,7 @@ const SessionPage = () => {
           const norm = normalize(title);
 
           await axios.post(
-            "https://api.tunevote.com/youtube-cache",
+            "http://localhost:4000/youtube-cache",
             {
               title_norm: norm,
               title,
@@ -1028,7 +1102,7 @@ const SessionPage = () => {
         }
 
         // Cache neu laden
-        const cacheRes = await axios.get("https://api.tunevote.com/youtube-cache");
+        const cacheRes = await axios.get("http://localhost:4000/youtube-cache");
         setVideoCache(cacheRes.data);
       }
 
@@ -1047,7 +1121,7 @@ const SessionPage = () => {
     setAiLoading(true);
     try {
       const res = await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
         { query },
         { headers: getAuthHeaders() },
       );
@@ -1076,7 +1150,7 @@ const SessionPage = () => {
 
       await axios
         .post(
-          `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+          `http://localhost:4000/sessions/${sessionId}/proposals`,
           { videoId, title, thumbnail },
           { headers: getAuthHeaders() },
         )
@@ -1109,7 +1183,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
+      const res = await axios.post("http://localhost:4000/guest/join", {
         nickname,
       });
 
@@ -1154,11 +1228,24 @@ const SessionPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-blue-700">
-            Session: {session.title}
-          </h1>
-          <div className="flex items-center gap-4">
+        <h1 className="text-3xl font-bold text-blue-700 flex items-center gap-3 mb-6">
+          Session: {session.title}
+          {/* Nur Host darf bearbeiten */}
+          {isHost && (
+            <button
+              onClick={() => {
+                setEditingName(session.title);
+                setIsEditingName(true);
+              }}
+              className="text-blue-600 hover:text-blue-800 transition opacity-70 hover:opacity-100"
+              title="Session-Namen bearbeiten"
+            >
+              <PencilSquareIcon className="w-6 h-6" />
+            </button>
+          )}
+        </h1>
+
+        <div className="flex items-center gap-4">
             {sessionLive ? (
               <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
                 Live
@@ -1186,7 +1273,45 @@ const SessionPage = () => {
               <div className="text-sm text-gray-500">Gast: {displayName}</div>
             )}
           </div>
-        </div>
+
+        {/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
+        {isEditingName && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                Session-Namen bearbeiten
+              </h2>
+
+              <input
+                type="text"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoFocus
+                placeholder="Neuer Name..."
+              />
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={saveSessionName}
+                  disabled={savingName || !editingName.trim()}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-md"
+                >
+                  {savingName ? "Speichert…" : "Speichern"}
+                </button>
+
+                <button
+                  onClick={() => setIsEditingName(false)}
+                  disabled={savingName}
+                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex flex-col sm:flex-row items-center justify-center gap-4">
           <QRCodeCanvas value={window.location.href} size={100} />
@@ -1331,6 +1456,100 @@ const SessionPage = () => {
               <p className="text-red-600 text-sm mt-2">
                 Ungültige E-Mail oder Fehler beim Versand.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* TEILNEHMER VERWALTEN – nur Host + private Session */}
+        {isHost && session?.is_private === 1 && (
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                Teilnehmer verwalten
+              </span>
+              <span className="text-sm font-normal text-gray-500">
+                {acceptedInvites.length} akzeptiert
+              </span>
+            </h3>
+
+            {acceptedInvites.length === 0 ? (
+              <p className="text-gray-500 text-center py-6">
+                Noch niemand hat die Einladung angenommen.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {acceptedInvites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                        {invite.invitee_name?.[0]?.toUpperCase() ||
+                          invite.invitee_email[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-800">
+                          {invite.invitee_name || "Unbenannt"}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {invite.invitee_email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (
+                          !confirm(
+                            `"${invite.invitee_name || invite.invitee_email}" wirklich entfernen?`,
+                          )
+                        )
+                          return;
+
+                        setRemovingUserId(invite.id);
+                        try {
+                          await axios.delete(
+                            `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
+                            { headers: getAuthHeaders() },
+                          );
+                          setAcceptedInvites((prev) =>
+                            prev.filter((i) => i.id !== invite.id),
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          alert("Fehler beim Entfernen des Teilnehmers");
+                        } finally {
+                          setRemovingUserId(null);
+                        }
+                      }}
+                      disabled={removingUserId === invite.id}
+                      className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 transition font-medium flex items-center gap-2"
+                    >
+                      {removingUserId === invite.id ? (
+                        <>Wird entfernt…</>
+                      ) : (
+                        <>
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                          Entfernen
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -1482,7 +1701,7 @@ const SessionPage = () => {
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
                     {
                       item_type: "pause",
                       duration: pauseDuration,
