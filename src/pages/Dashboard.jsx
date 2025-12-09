@@ -1,10 +1,11 @@
 // src/pages/Dashboard.jsx
-import React, { useEffect, useState, Fragment } from "react";
+import React, { useEffect, useState, Fragment, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Transition } from "@headlessui/react";
+import { io } from "socket.io-client";
 import {
   Plus,
   LogOut,
@@ -63,7 +64,7 @@ export default function Dashboard() {
   // === Sessions laden ===
   const fetchSessions = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/sessions", {
+      const res = await axios.get("http://localhost:4000/sessions", {
         headers: getAuthHeaders(),
       });
       setSessions(res.data);
@@ -83,7 +84,7 @@ export default function Dashboard() {
 
   const fetchSentInvites = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/invites/sent", {
+      const res = await axios.get("http://localhost:4000/invites/sent", {
         headers: getAuthHeaders(),
       });
       setSentInvites(res.data);
@@ -94,7 +95,7 @@ export default function Dashboard() {
 
   const fetchReceivedInvites = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/invites/received", {
+      const res = await axios.get("http://localhost:4000/invites/received", {
         headers: getAuthHeaders(),
       });
       setReceivedInvites(res.data);
@@ -108,7 +109,7 @@ export default function Dashboard() {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/revoke`,
+        `http://localhost:4000/invites/${inviteId}/revoke`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -132,30 +133,41 @@ export default function Dashboard() {
   const acceptInvite = async (inviteId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/accept`,
+        `http://localhost:4000/invites/${inviteId}/accept`,
         {},
-        {
-          headers: getAuthHeaders(),
-        },
+        { headers: getAuthHeaders() },
       );
-      fetchReceivedInvites(); // aktualisieren
+
+      // SOFORT aus der Liste entfernen (optimistic update – sieht blitzschnell aus!)
+      setReceivedInvites((prev) => prev.filter((i) => i.id !== inviteId));
+
+      // Optional: Sessions neu laden – dann erscheint die Session sofort unter "Aktive Sessions"
+      fetchSessions();
+
+      // Alternativ: Nur die empfangene Liste neu laden (langsamer, aber sicher)
+      // fetchReceivedInvites();
     } catch (err) {
-      alert("Fehler beim Akzeptieren");
+      console.error("Fehler beim Akzeptieren:", err);
+      alert("Fehler beim Akzeptieren der Einladung");
+      // Bei Fehler wieder laden, falls was schief ging
+      fetchReceivedInvites();
     }
   };
 
   const rejectInvite = async (inviteId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/reject`,
+        `http://localhost:4000/invites/${inviteId}/reject`,
         {},
-        {
-          headers: getAuthHeaders(),
-        },
+        { headers: getAuthHeaders() },
       );
-      fetchReceivedInvites(); // aktualisieren
+
+      // Sofort aus UI entfernen
+      setReceivedInvites((prev) => prev.filter((i) => i.id !== inviteId));
     } catch (err) {
+      console.error("Fehler beim Ablehnen:", err);
       alert("Fehler beim Ablehnen");
+      fetchReceivedInvites();
     }
   };
 
@@ -179,7 +191,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://api.tunevote.com/sessions",
+        "http://localhost:4000/sessions",
         {
           title: newSessionTitle,
           is_private: isPrivate ? 1 : 0,
@@ -198,7 +210,7 @@ export default function Dashboard() {
   // === Session löschen (nur Host) ===
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
+      await axios.delete(`http://localhost:4000/sessions/${sessionId}`, {
         headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
@@ -283,22 +295,24 @@ export default function Dashboard() {
             >
               <Menu.Items className="absolute right-0 mt-2 w-56 origin-top-right rounded-2xl bg-black/90 backdrop-blur-xl border border-white/20 shadow-2xl overflow-hidden">
                 <div className="py-2">
-                  {/* Mein Profil*/}
-                  <Menu.Item>
-                    {({ active }) => (
-                      <button
-                        onClick={() => navigate("/profile")}
-                        className={`${
-                          active ? "bg-white/10" : ""
-                        } flex w-full items-center space-x-3 px-5 py-3 text-left transition-colors duration-200`}
-                      >
-                        <User className="w-5 h-5 text-purple-400" />
-                        <span className="text-white font-medium">
-                          Mein Profil
-                        </span>
-                      </button>
-                    )}
-                  </Menu.Item>
+                  {!isGuest && (
+                    <Menu.Item>
+                      {/* Mein Profil*/}
+                      {({ active }) => (
+                        <button
+                          onClick={() => navigate("/profile")}
+                          className={`${
+                            active ? "bg-white/10" : ""
+                          } flex w-full items-center space-x-3 px-5 py-3 text-left transition-colors duration-200`}
+                        >
+                          <User className="w-5 h-5 text-purple-400" />
+                          <span className="text-white font-medium">
+                            Mein Profil
+                          </span>
+                        </button>
+                      )}
+                    </Menu.Item>
+                  )}
 
                   {/* Logout / Verlassen */}
                   <Menu.Item>
@@ -351,143 +365,149 @@ export default function Dashboard() {
           </motion.div>
         )}
 
-        {/* === Eingeladene Sessions anzeigen === */}
-        <div className="mt-16">
-          <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
-            <UserPlus className="w-8 h-8 text-purple-400" />
-            <span>Einladungen</span>
-          </h2>
+        {!isGuest && (
+          <div className="mt-16">
+            {/* === Eingeladene Sessions anzeigen === */}
+            <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
+              <UserPlus className="w-8 h-8 text-purple-400" />
+              <span>Einladungen</span>
+            </h2>
 
-          {/* Gesendete Einladungen */}
+            {/* Gesendete Einladungen */}
 
-          <div className="mb-8">
-            <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
 
-            {sentInvites.length === 0 ? (
-              <p className="text-gray-300">
-                Noch keine Einladungen verschickt.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sentInvites.map((invite) => {
-                  let statusIcon;
-                  let statusText;
-                  let statusColor;
+              {sentInvites.length === 0 ? (
+                <p className="text-gray-300">
+                  Noch keine Einladungen verschickt.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sentInvites.map((invite) => {
+                    let statusIcon;
+                    let statusText;
+                    let statusColor;
 
-                  switch (invite.status) {
-                    case "accepted":
-                      statusIcon = (
-                        <CheckCircle className="w-4 h-4 text-green-400" />
-                      );
-                      statusText = "Akzeptiert";
-                      statusColor = "text-green-400";
-                      break;
-                    case "rejected":
-                      statusIcon = <XCircle className="w-4 h-4 text-red-400" />;
-                      statusText = "Abgelehnt";
-                      statusColor = "text-red-400";
-                      break;
-                    case "revoked":
-                      statusIcon = <Ban className="w-4 h-4 text-red-400" />;
-                      statusText = "Widerrufen";
-                      statusColor = "text-red-400";
-                      break;
-                    default:
-                      statusIcon = (
-                        <Clock className="w-4 h-4 text-yellow-400" />
-                      );
-                      statusText = "Ausstehend";
-                      statusColor = "text-yellow-400";
-                      break;
-                  }
+                    switch (invite.status) {
+                      case "accepted":
+                        statusIcon = (
+                          <CheckCircle className="w-4 h-4 text-green-400" />
+                        );
+                        statusText = "Akzeptiert";
+                        statusColor = "text-green-400";
+                        break;
+                      case "rejected":
+                        statusIcon = (
+                          <XCircle className="w-4 h-4 text-red-400" />
+                        );
+                        statusText = "Abgelehnt";
+                        statusColor = "text-red-400";
+                        break;
+                      case "revoked":
+                        statusIcon = <Ban className="w-4 h-4 text-red-400" />;
+                        statusText = "Widerrufen";
+                        statusColor = "text-red-400";
+                        break;
+                      default:
+                        statusIcon = (
+                          <Clock className="w-4 h-4 text-yellow-400" />
+                        );
+                        statusText = "Ausstehend";
+                        statusColor = "text-yellow-400";
+                        break;
+                    }
 
-                  return (
+                    return (
+                      <div
+                        key={invite.id}
+                        className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between relative"
+                      >
+                        <div>
+                          <p className="text-sm mb-1">
+                            Session: <strong>{invite.session_title}</strong>
+                          </p>
+
+                          <p className="text-gray-400 text-xs mb-2">
+                            An: {invite.email}
+                          </p>
+
+                          {/* Status */}
+                          <div className="flex items-center gap-2 text-xs mb-3">
+                            <span className={statusColor + " font-semibold"}>
+                              {statusIcon}
+                            </span>
+                            <span className={statusColor}>{statusText}</span>
+                          </div>
+                        </div>
+
+                        {/* Widerrufen nur wenn pending */}
+                        {invite.status === "pending" && (
+                          <button
+                            onClick={() => revokeInvite(invite.id)}
+                            className="mt-3 w-full py-2 rounded-xl bg-red-600/80 hover:bg-red-700 text-white font-medium text-sm transition-all"
+                          >
+                            Einladung widerrufen
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Empfangene Einladungen */}
+            <div>
+              <h3 className="text-xl font-semibold mb-3">
+                Von anderen erhalten
+              </h3>
+              {receivedInvites.length === 0 ? (
+                <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {receivedInvites.map((invite) => (
                     <div
                       key={invite.id}
-                      className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between relative"
+                      className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between"
                     >
-                      <div>
-                        <p className="text-sm mb-1">
-                          Session: <strong>{invite.session_title}</strong>
-                        </p>
-
-                        <p className="text-gray-400 text-xs mb-2">
-                          An: {invite.email}
-                        </p>
-
-                        {/* Status */}
-                        <div className="flex items-center gap-2 text-xs mb-3">
-                          <span className={statusColor + " font-semibold"}>
-                            {statusIcon}
-                          </span>
-                          <span className={statusColor}>{statusText}</span>
+                      <p className="text-sm mb-1">
+                        Session: <strong>{invite.session_title}</strong>
+                      </p>
+                      <p className="text-gray-400 text-xs mb-2">
+                        Von: {invite.host_name}
+                      </p>
+                      <p className="text-gray-400 text-xs mb-2">
+                        Status:{" "}
+                        {invite.accepted_at
+                          ? "Akzeptiert"
+                          : invite.revoked_at
+                            ? "Abgelehnt"
+                            : "Ausstehend"}
+                      </p>
+                      {!invite.accepted_at && !invite.revoked_at && (
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => acceptInvite(invite.id)}
+                            className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium transition-all"
+                          >
+                            Akzeptieren
+                          </button>
+                          <button
+                            onClick={() => rejectInvite(invite.id)}
+                            className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-all"
+                          >
+                            Ablehnen
+                          </button>
                         </div>
-                      </div>
-
-                      {/* Widerrufen nur wenn pending */}
-                      {invite.status === "pending" && (
-                        <button
-                          onClick={() => revokeInvite(invite.id)}
-                          className="mt-3 w-full py-2 rounded-xl bg-red-600/80 hover:bg-red-700 text-white font-medium text-sm transition-all"
-                        >
-                          Einladung widerrufen
-                        </button>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-
-          {/* Empfangene Einladungen */}
-          <div>
-            <h3 className="text-xl font-semibold mb-3">Von anderen erhalten</h3>
-            {receivedInvites.length === 0 ? (
-              <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {receivedInvites.map((invite) => (
-                  <div
-                    key={invite.id}
-                    className="p-4 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex flex-col justify-between"
-                  >
-                    <p className="text-sm mb-1">
-                      Session: <strong>{invite.session_title}</strong>
-                    </p>
-                    <p className="text-gray-400 text-xs mb-2">
-                      Von: {invite.host_name}
-                    </p>
-                    <p className="text-gray-400 text-xs mb-2">
-                      Status:{" "}
-                      {invite.accepted_at
-                        ? "Akzeptiert"
-                        : invite.revoked_at
-                          ? "Abgelehnt"
-                          : "Ausstehend"}
-                    </p>
-                    {!invite.accepted_at && !invite.revoked_at && (
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => acceptInvite(invite.id)}
-                          className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium transition-all"
-                        >
-                          Akzeptieren
-                        </button>
-                        <button
-                          onClick={() => rejectInvite(invite.id)}
-                          className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-all"
-                        >
-                          Ablehnen
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* === Session erstellen (nur eingeloggte) === */}
         {isLoggedIn && (
