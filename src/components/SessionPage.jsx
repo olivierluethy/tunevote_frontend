@@ -32,7 +32,7 @@ const SessionPage = () => {
   const [inviteStatus, setInviteStatus] = useState(""); // "success" | "error" | ""
 
   const [acceptedInvites, setAcceptedInvites] = useState([]); // <-- neu
-const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimation
+  const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimation
 
   // Voting
   const [votingRound, setVotingRound] = useState(null);
@@ -295,12 +295,12 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
         loadCurrentVotingPhase();
       }
 
-            // Lade akzeptierte Einladungen (nur bei privaten Sessions)
+      // Lade akzeptierte Einladungen (nur bei privaten Sessions)
       if (sessRes.data.is_private === 1) {
         try {
           const invitesRes = await axios.get(
             `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
-            { headers: getAuthHeaders() }
+            { headers: getAuthHeaders() },
           );
           setAcceptedInvites(invitesRes.data || []);
         } catch (err) {
@@ -434,11 +434,11 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
     }
   }, [loadSessionData, loadProposals, token, guestToken]); // ← loadProposals hinzugefügt
 
-    // === Socket.IO ===
+  // === Socket.IO ===
   useEffect(() => {
     if (!token && !guestToken) return;
 
-    socketRef.current = io(SOCKET_SERVER, {
+        socketRef.current = io(SOCKET_SERVER, {
       query: { sessionId },
       auth: token ? { token } : { guestToken },
     });
@@ -532,9 +532,9 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
     const handleInviteAccepted = (newInvite) => {
       console.log("[Realtime] Neue akzeptierte Einladung:", newInvite);
       setAcceptedInvites((prev) => {
-        if (prev.some(i => i.id === newInvite.id)) return prev;
-        return [...prev, newInvite].sort((a, b) =>
-          new Date(b.accepted_at) - new Date(a.accepted_at)
+        if (prev.some((i) => i.id === newInvite.id)) return prev;
+        return [...prev, newInvite].sort(
+          (a, b) => new Date(b.accepted_at) - new Date(a.accepted_at),
         );
       });
     };
@@ -888,6 +888,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
       if (data.current_video_id && data.video_start_time) {
         syncPlayback(data);
       }
+
     } catch (err) {
       console.error("Join Live failed", err);
       setIsLiveJoined(false);
@@ -1228,17 +1229,6 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-blue-700 flex items-center gap-3 mb-6">
-          <div className="mb-6">
-  <button
-    onClick={() => window.location.href = "/dashboard"}
-    className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 hover:text-gray-900 transition-all duration-200 font-medium shadow-md active:scale-95"
-  >
-    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-    </svg>
-    Back
-  </button>
-</div>
           Session: {session.title}
           {/* Nur Host darf bearbeiten */}
           {isHost && (
@@ -1254,6 +1244,35 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
             </button>
           )}
         </h1>
+
+        <div className="flex items-center gap-4">
+            {sessionLive ? (
+              <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
+                Live
+              </div>
+            ) : (
+              <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
+                Warte auf Host
+              </div>
+            )}
+            {isHost && !sessionLive && (
+              <button
+                onClick={startSession}
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                Start Session
+              </button>
+            )}
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-gray-600"
+            >
+              ← Zurück
+            </button>
+            {isGuest && (
+              <div className="text-sm text-gray-500">Gast: {displayName}</div>
+            )}
+          </div>
 
         {/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
         {isEditingName && (
@@ -1441,7 +1460,7 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
           </div>
         )}
 
-                {/* TEILNEHMER VERWALTEN – nur Host + private Session */}
+        {/* TEILNEHMER VERWALTEN – nur Host + private Session */}
         {isHost && session?.is_private === 1 && (
           <div className="bg-white p-4 rounded-lg shadow mb-6">
             <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
@@ -1466,27 +1485,37 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                        {invite.invitee_name?.[0]?.toUpperCase() || invite.invitee_email[0].toUpperCase()}
+                        {invite.invitee_name?.[0]?.toUpperCase() ||
+                          invite.invitee_email[0].toUpperCase()}
                       </div>
                       <div>
                         <p className="font-semibold text-gray-800">
                           {invite.invitee_name || "Unbenannt"}
                         </p>
-                        <p className="text-sm text-gray-600">{invite.invitee_email}</p>
+                        <p className="text-sm text-gray-600">
+                          {invite.invitee_email}
+                        </p>
                       </div>
                     </div>
 
                     <button
                       onClick={async () => {
-                        if (!confirm(`"${invite.invitee_name || invite.invitee_email}" wirklich entfernen?`)) return;
+                        if (
+                          !confirm(
+                            `"${invite.invitee_name || invite.invitee_email}" wirklich entfernen?`,
+                          )
+                        )
+                          return;
 
                         setRemovingUserId(invite.id);
                         try {
                           await axios.delete(
                             `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
-                            { headers: getAuthHeaders() }
+                            { headers: getAuthHeaders() },
                           );
-                          setAcceptedInvites(prev => prev.filter(i => i.id !== invite.id));
+                          setAcceptedInvites((prev) =>
+                            prev.filter((i) => i.id !== invite.id),
+                          );
                         } catch (err) {
                           console.error(err);
                           alert("Fehler beim Entfernen des Teilnehmers");
@@ -1501,8 +1530,18 @@ const [removingUserId, setRemovingUserId] = useState(null); // für Ladeanimatio
                         <>Wird entfernt…</>
                       ) : (
                         <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
                           </svg>
                           Entfernen
                         </>
