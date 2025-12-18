@@ -5,6 +5,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 import { PencilSquareIcon } from "@heroicons/react/24/outline";
+import unidecode from "unidecode";
 
 const SOCKET_SERVER = "http://localhost:4000";
 
@@ -69,7 +70,6 @@ const SessionPage = () => {
   // === AI RECOMMENDATIONS ===
   const [recommendations, setRecommendations] = useState([]);
   const [recLoading, setRecLoading] = useState(false);
-  const [addingId, setAddingId] = useState(null); // <-- NEU: für Button-Feedback
 
   const token = localStorage.getItem("token");
   const guestToken = localStorage.getItem("guestToken");
@@ -438,7 +438,7 @@ const SessionPage = () => {
   useEffect(() => {
     if (!token && !guestToken) return;
 
-        socketRef.current = io(SOCKET_SERVER, {
+    socketRef.current = io(SOCKET_SERVER, {
       query: { sessionId },
       auth: token ? { token } : { guestToken },
     });
@@ -700,14 +700,15 @@ const SessionPage = () => {
 
         try {
           // 1. Cache-Suche
+                    // 1. Cache-Suche
           const matches = videoCache
             .map((item) => {
-              const ratio = levenshteinRatio(item.title_norm, normQuery);
-              return { ...item, ratio };
+              const normalizedCacheTitle = normalize(item.title_norm);  // 🔑 FIX: Jetzt wird der Cache-Titel auch bereinigt!
+              const ratio = levenshteinRatio(normalizedCacheTitle, normQuery);
+              const includes = normalizedCacheTitle.includes(normQuery);
+              return { ...item, ratio, includes };
             })
-            .filter(
-              (item) => item.ratio > 85 || item.title_norm.includes(normQuery),
-            )
+            .filter((item) => item.ratio > 85 || item.includes)
             .sort((a, b) => b.ratio - a.ratio)
             .slice(0, 5);
 
@@ -805,25 +806,28 @@ const SessionPage = () => {
       videoId,
       playerVars: {
         start: Math.floor(startSeconds),
-        autoplay: shouldPlay ? 1 : 0,
+        autoplay: 0, // Always start with autoplay off; control manually in onReady to avoid sound issues
         controls: 0,
         modestbranding: 1,
         rel: 0,
         fs: 0,
-        mute: isMutedForMe ? 1 : 0, // ← NEW
       },
       events: {
         onReady: () => {
-          playerRef.current.seekTo(startSeconds, true);
-
-          if (shouldPlay) playerRef.current.playVideo();
-
-          // Re-apply mute again for safety
+          // Apply mute/volume FIRST
           if (isMutedForMe) {
             playerRef.current.mute();
           } else {
             playerRef.current.unMute();
             playerRef.current.setVolume(volume);
+          }
+
+          // Then seek
+          playerRef.current.seekTo(startSeconds, true);
+
+          // Then play (if needed)
+          if (shouldPlay) {
+            playerRef.current.playVideo();
           }
         },
       },
@@ -888,7 +892,6 @@ const SessionPage = () => {
       if (data.current_video_id && data.video_start_time) {
         syncPlayback(data);
       }
-
     } catch (err) {
       console.error("Join Live failed", err);
       setIsLiveJoined(false);
@@ -988,12 +991,26 @@ const SessionPage = () => {
 
   // === Suche & Vorschlag ===
   // === NORMALIZE + LEVENSHTEIN (JS) ===
-  const normalize = (str) =>
-    str
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+  const normalize = (str) => {
+    if (!str) return "";
+
+    // Schritt 1: Akzente entfernen (entspricht der Python-Version)
+    // 'Mylène Farmer' wird zu 'Mylene Farmer'
+    let normalized = unidecode(str);
+
+    // Schritt 2: Kleinbuchstaben, Satzzeichen entfernen und Leerzeichen konsolidieren
+    normalized = normalized.toLowerCase();
+
+    // Entfernt alles, was kein Buchstabe (a-z), keine Ziffer (0-9) oder Leerzeichen/Bindestrich ist
+    // WICHTIG: Das `\s-` in deinem ursprünglichen Regex war etwas ungenau.
+    // Ein sauberer Regex für diesen Schritt ist `[^a-z0-9\s]` wie in Python.
+    normalized = normalized.replace(/[^a-z0-9\s]/g, "");
+
+    // Konsolidiert mehrfache Leerzeichen und trimmt Ränder
+    normalized = normalized.replace(/\s+/g, " ").trim();
+
+    return normalized;
+  };
 
   // Levenshtein-Distanz (JS-Version)
   const levenshteinDistance = (s1, s2) => {
@@ -1025,112 +1042,6 @@ const SessionPage = () => {
       ((longer.length - levenshteinDistance(longer, shorter)) / longer.length) *
         100,
     );
-  };
-
-  // === Suche & Vorschlag ===
-  const searchYouTube = async () => {
-    const query = searchQuery.trim();
-    if (!query) return;
-
-    const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
-    if (!API_KEY) return;
-
-    const normQuery = normalize(query);
-
-    try {
-      // ---- 1. Lokaler Cache: Ähnliche Titel suchen (JS Levenshtein) ----
-      const matches = videoCache
-        .map((item) => {
-          const normTitle = item.title_norm;
-          const ratio =
-            normTitle === normQuery
-              ? 100
-              : levenshteinRatio(normTitle, normQuery);
-          return { ...item, ratio, normTitle };
-        })
-        .filter((item) => item.ratio > 85 || item.normTitle.includes(normQuery))
-        .sort((a, b) => b.ratio - a.ratio)
-        .slice(0, 5);
-
-      let results = [];
-
-      if (matches.length > 0) {
-        results = matches.map((m) => ({
-          id: { videoId: m.youtubeId }, // ← RICHTIG!
-          snippet: {
-            title: m.title,
-            thumbnails: { default: { url: m.thumbnail } },
-          },
-        }));
-        console.log(`[Cache] Found ${matches.length} results for "${query}"`);
-      } else {
-        console.log(`[YouTube] Searching for "${query}"`);
-        const res = await axios.get(
-          "https://www.googleapis.com/youtube/v3/search",
-          {
-            params: {
-              part: "snippet",
-              type: "video",
-              maxResults: 5,
-              q: query,
-              key: API_KEY,
-            },
-          },
-        );
-
-        results = res.data.items || [];
-
-        // ---- 4. Ergebnisse in Cache speichern ----
-        for (const item of results) {
-          const title = item.snippet.title;
-          const youtubeId = item.id.videoId;
-          const thumbnail =
-            item.snippet.thumbnails.medium?.url ||
-            `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
-          const norm = normalize(title);
-
-          await axios.post(
-            "http://localhost:4000/youtube-cache",
-            {
-              title_norm: norm,
-              title,
-              youtubeId: youtubeId, // ← ÄNDERN!
-              thumbnail,
-            },
-            { headers: getAuthHeaders() },
-          );
-        }
-
-        // Cache neu laden
-        const cacheRes = await axios.get("http://localhost:4000/youtube-cache");
-        setVideoCache(cacheRes.data);
-      }
-
-      setSearchResults(results);
-
-      if (sessionLive && isLiveJoined) {
-        fetchAiSuggestions(query);
-      }
-    } catch (err) {
-      console.error("[Search Error]", err);
-    }
-  };
-
-  // 🔽 NEU: KI-Songvorschläge abrufen
-  const fetchAiSuggestions = async (query) => {
-    setAiLoading(true);
-    try {
-      const res = await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
-        { query },
-        { headers: getAuthHeaders() },
-      );
-      setAiSuggestions(res.data || []);
-    } catch (err) {
-      console.warn("AI suggestion fetch failed", err);
-    } finally {
-      setAiLoading(false);
-    }
   };
 
   const proposeSong = async (video) => {
@@ -1246,33 +1157,33 @@ const SessionPage = () => {
         </h1>
 
         <div className="flex items-center gap-4">
-            {sessionLive ? (
-              <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
-                Live
-              </div>
-            ) : (
-              <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
-                Warte auf Host
-              </div>
-            )}
-            {isHost && !sessionLive && (
-              <button
-                onClick={startSession}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Start Session
-              </button>
-            )}
+          {sessionLive ? (
+            <div className="px-3 py-2 bg-green-100 text-green-800 rounded">
+              Live
+            </div>
+          ) : (
+            <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
+              Warte auf Host
+            </div>
+          )}
+          {isHost && !sessionLive && (
             <button
-              onClick={() => navigate("/dashboard")}
-              className="text-gray-600"
+              onClick={startSession}
+              className="px-4 py-2 bg-blue-600 text-white rounded"
             >
-              ← Zurück
+              Start Session
             </button>
-            {isGuest && (
-              <div className="text-sm text-gray-500">Gast: {displayName}</div>
-            )}
-          </div>
+          )}
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="text-gray-600"
+          >
+            ← Zurück
+          </button>
+          {isGuest && (
+            <div className="text-sm text-gray-500">Gast: {displayName}</div>
+          )}
+        </div>
 
         {/* -------------------- MODAL ZUM BEARBEITEN -------------------- */}
         {isEditingName && (

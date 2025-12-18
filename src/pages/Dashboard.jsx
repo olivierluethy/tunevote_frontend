@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import React, { useEffect, useState, Fragment, useRef } from "react";
+import { useEffect, useState, Fragment, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
@@ -15,7 +15,6 @@ import {
   Radio,
   Clock,
   Music,
-  Link2,
   Sparkles,
   AlertCircle,
   UserPlus,
@@ -52,6 +51,31 @@ export default function Dashboard() {
   const isGuest = !token && guestToken;
   const isLoggedIn = !!token;
   const displayName = isGuest ? guestName : username;
+
+  const [profileImage, setProfileImage] = useState(null);
+
+  const socketRef = useRef(null);
+
+  // Neu: Socket richtig initialisieren
+  useEffect(() => {
+    socketRef.current = io("http://localhost:4000");
+
+    socketRef.current.on("participant_count_update", (data) => {
+      console.log("Dashboard: participant_count_update empfangen", data); // zum Testen
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === data.sessionId ? { ...s, participant_count: data.count } : s,
+        ),
+      );
+    });
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.off("participant_count_update");
+        socketRef.current.disconnect();
+      }
+    };
+  }, []); // Nur einmal beim Mount
 
   // === Auth Headers ===
   const getAuthHeaders = () => {
@@ -101,6 +125,27 @@ export default function Dashboard() {
       setReceivedInvites(res.data);
     } catch (err) {
       console.error("Fehler beim Laden empfangener Einladungen:", err);
+    }
+  };
+
+  // Profilbild laden (nur für eingeloggte User)
+  const fetchProfileData = async () => {
+    if (!isLoggedIn) return; // Gäste haben kein Profilbild
+
+    try {
+      const res = await axios.get("http://localhost:4000/profile", {
+        headers: getAuthHeaders(),
+      });
+
+      const { imageType, imageData } = res.data;
+      if (imageData && imageType) {
+        setProfileImage(`data:${imageType};base64,${imageData}`);
+      } else {
+        setProfileImage(null); // kein Bild → Fallback-Buchstabe
+      }
+    } catch (err) {
+      console.error("Fehler beim Laden des Profilbildes:", err);
+      setProfileImage(null);
     }
   };
 
@@ -178,6 +223,12 @@ export default function Dashboard() {
       navigate("/login");
     }
   }, [token, guestToken]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchProfileData();
+    }
+  }, [isLoggedIn]);
 
   // === Logout ===
   const handleLogout = () => {
@@ -270,8 +321,18 @@ export default function Dashboard() {
           <Menu as="div" className="relative">
             <Menu.Button className="flex items-center space-x-3 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 transition-all duration-300 group">
               {/* Avatar */}
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-lg ring-2 ring-white/20">
-                {displayName.charAt(0).toUpperCase()}
+              <div className="w-10 h-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/20 relative">
+                {profileImage ? (
+                  <img
+                    src={profileImage}
+                    alt="Profilbild"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg">
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
 
               {/* Name (nur ab sm sichtbar) */}
