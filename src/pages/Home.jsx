@@ -1,7 +1,8 @@
 // src/pages/Home.jsx
-import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { io } from "socket.io-client";
 import {
   Play,
   Users,
@@ -9,11 +10,18 @@ import {
   Music,
   Heart,
   Shuffle,
-  ArrowRight,
   Headphones,
   Mic,
   Sparkles,
 } from "lucide-react";
+
+// Am besten als separate Variable außerhalb der Komponente
+const publicSocket = io("http://localhost:4000", {
+  autoConnect: true,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+});
 
 export default function Home() {
   const [audio] = useState(
@@ -27,21 +35,24 @@ export default function Home() {
       title: "Blinding Lights",
       artist: "The Weeknd",
       votes: 89,
-      cover: "https://i.scdn.co/image/ab67616d00001e02ff9ca10b55ce82aeab78608a",
+      cover:
+        "https://upload.wikimedia.org/wikipedia/commons/a/a0/The_Weeknd_Portrait_by_Brian_Ziff.jpg",
     },
     {
       id: 2,
       title: "Levitating",
       artist: "Dua Lipa",
       votes: 76,
-      cover: "https://i.scdn.co/image/ab67616d00001e028f8c0c1d2b9f9a7b4d9f6c5e",
+      cover:
+        "https://upload.wikimedia.org/wikipedia/commons/7/72/DuaLipa-byPhilipRomano.jpg",
     },
     {
       id: 3,
       title: "Good 4 U",
       artist: "Olivia Rodrigo",
       votes: 71,
-      cover: "https://i.scdn.co/image/ab67616d00001e02e4a2f3b3f9a7b4d9f6c5e4a2",
+      cover:
+        "https://upload.wikimedia.org/wikipedia/commons/b/b7/Glasto2025-546_%28cropped%29_%282%29.jpg",
     },
   ]);
 
@@ -65,6 +76,257 @@ export default function Home() {
     }
     setIsPlaying(!isPlaying);
   };
+
+  function TopArtistsTable() {
+    const [artists, setArtists] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      // Erstes Laden per HTTP (für SSR/Initial-Render)
+      const fetchInitial = async () => {
+        try {
+          const res = await fetch("http://localhost:4000/top-today");
+          const data = await res.json();
+          setArtists(data);
+          setLoading(false);
+        } catch (err) {
+          console.error(err);
+          setLoading(false);
+        }
+      };
+
+      fetchInitial();
+
+      // Live-Updates via Socket.io
+      publicSocket.on("today_top_artists_updated", (data) => {
+        console.log("Live Update: Top Artists", data.artists);
+        setArtists(data);
+
+        // Optional: Kleine Animation triggern
+        // z. B. mit framer-motion key ändern oder CSS-Klasse
+      });
+
+      // Cleanup
+      return () => {
+        publicSocket.off("today_top_artists_updated");
+      };
+    }, []);
+
+    // Der Rest bleibt fast gleich – nur loading & render
+    if (loading && artists.length === 0) {
+      return (
+        <div className="w-full h-64 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+            <p className="text-gray-400 animate-pulse">
+              Syncing live charts...
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+        <div className="px-6 py-4 bg-white/5 flex justify-between items-center">
+          <h3 className="font-semibold text-lg">Live Today’s Artist 🔥</h3>
+          <span className="text-xs text-green-400 animate-pulse">● LIVE</span>
+        </div>
+
+        <table className="min-w-full border-collapse">
+          {/* ... dein bestehender thead ... */}
+
+          <tbody className="relative">
+            <AnimatePresence mode="popLayout">
+              {artists.map((artist, index) => (
+                <motion.tr
+                  key={artist.artist_id}
+                  layout
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  className="border-t border-white/5 hover:bg-white/10 transition-colors group"
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 font-bold text-sm">
+                      {index === 0
+                        ? "1st"
+                        : index === 1
+                          ? "2nd"
+                          : index === 2
+                            ? "3rd"
+                            : index + 1}
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative overflow-hidden w-12 h-12 rounded-full border border-white/10">
+                        <img
+                          src={artist.image_url || "/placeholder-artist.png"}
+                          alt={artist.artist_name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <span className="font-semibold text-gray-100 group-hover:text-purple-400 transition-colors">
+                        {artist.artist_name}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4 text-right">
+                    <motion.span
+                      key={artist.vote_count}
+                      initial={{ scale: 1 }}
+                      animate={{ scale: [1, 1.3, 1] }}
+                      transition={{ duration: 0.4 }}
+                      className="font-mono font-bold text-purple-300"
+                    >
+                      {artist.vote_count.toLocaleString()}
+                    </motion.span>
+                  </td>
+                </motion.tr>
+              ))}
+            </AnimatePresence>
+          </tbody>
+        </table>
+
+        {!artists.length && !loading && (
+          <div className="py-20 text-center text-gray-500">
+            Noch keine Votes heute – seid die Ersten! 🎵
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==================== NEUE KOMPONENTE HINZUFÜGEN ====================
+  function TopWeeklySongsTable() {
+    const [songs, setSongs] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      // Initiales Laden per HTTP
+      const fetchInitial = async () => {
+        try {
+          const res = await fetch("http://localhost:4000/top-weekly-songs");
+          const data = await res.json();
+          setSongs(data);
+          setLoading(false);
+        } catch (err) {
+          console.error("Fehler beim Laden der Weekly Top Songs:", err);
+          setLoading(false);
+        }
+      };
+
+      fetchInitial();
+
+      // Optional: Live-Updates via Socket.io (falls du später ein Event emitierst)
+      // publicSocket.on("weekly_top_songs_updated", (data) => {
+      //   setSongs(data);
+      // });
+
+      return () => {
+        // publicSocket.off("weekly_top_songs_updated");
+      };
+    }, []);
+
+    if (loading && songs.length === 0) {
+      return (
+        <div className="w-full h-64 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+            <p className="text-gray-400 animate-pulse">
+              Lade wöchentliche Charts...
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+        <div className="px-6 py-4 bg-white/5 flex justify-between items-center">
+          <h3 className="font-semibold text-lg">Top Songs dieser Woche 🔥</h3>
+          <span className="text-xs text-green-400 animate-pulse">● WOCHE</span>
+        </div>
+
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="border-b border-white/10 text-left text-sm text-gray-400">
+              <th className="px-6 py-3 text-center">#</th>
+              <th className="px-6 py-3">Song</th>
+              <th className="px-6 py-3">Artist</th>
+              <th className="px-6 py-3 text-right">Abspielungen</th>
+            </tr>
+          </thead>
+
+          <tbody className="relative">
+            <AnimatePresence mode="popLayout">
+              {songs.map((song, index) => (
+                <motion.tr
+                  key={song.youtube_id}
+                  layout
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  className="border-t border-white/5 hover:bg-white/10 transition-colors group"
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 font-bold text-sm">
+                      {index + 1}
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative overflow-hidden w-12 h-12 rounded-lg border border-white/10">
+                        <img
+                          src={song.thumbnail || "/placeholder-song.png"}
+                          alt={song.song_title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-100 group-hover:text-purple-400 transition-colors">
+                          {song.song_title}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4 text-gray-300">
+                    {song.artist_name}
+                  </td>
+
+                  <td className="px-6 py-4 text-right">
+                    <motion.span
+                      key={song.queue_count}
+                      initial={{ scale: 1 }}
+                      animate={{ scale: [1, 1.3, 1] }}
+                      transition={{ duration: 0.4 }}
+                      className="font-mono font-bold text-purple-300"
+                    >
+                      {song.queue_count}
+                    </motion.span>
+                  </td>
+                </motion.tr>
+              ))}
+            </AnimatePresence>
+          </tbody>
+        </table>
+
+        {!songs.length && !loading && (
+          <div className="py-20 text-center text-gray-500">
+            Noch keine Songs diese Woche – lasst die Musik laufen! 🎵
+          </div>
+        )}
+      </div>
+    );
+  }
+  // ==================================================================
 
   // ✅ handleJoinSession ruft die Backend-Route auf
   const handleJoinSession = async () => {
@@ -188,6 +450,136 @@ export default function Home() {
               />
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Community Poll – Interactive Engagement */}
+      <section className="py-20 px-4 bg-gradient-to-b from-black/50 to-black">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Community Poll 🔥
+            </h2>
+            <p className="text-xl text-gray-400">
+              What does the TuneVote community think?
+            </p>
+          </motion.div>
+
+          <div className="bg-white/5 backdrop-blur-lg rounded-3xl p-8 border border-white/10 shadow-2xl">
+            <h3 className="text-2xl font-semibold mb-8 text-center">
+              Which artist should dominate 2025?
+            </h3>
+
+            <div className="space-y-6">
+              {[
+                {
+                  name: "The Weeknd",
+                  votes: 3124,
+                  color: "from-purple-500 to-purple-700",
+                },
+                {
+                  name: "Taylor Swift",
+                  votes: 2987,
+                  color: "from-pink-500 to-rose-600",
+                },
+                {
+                  name: "Drake",
+                  votes: 2105,
+                  color: "from-cyan-500 to-blue-600",
+                },
+                {
+                  name: "Billie Eilish",
+                  votes: 1893,
+                  color: "from-green-500 to-emerald-600",
+                },
+              ].map((option) => {
+                const percentage = (option.votes / 10109) * 100; // total mock votes
+                return (
+                  <motion.div
+                    key={option.name}
+                    whileHover={{ scale: 1.02 }}
+                    className="cursor-pointer"
+                  >
+                    <div className="flex justify-between mb-2">
+                      <span className="font-medium">{option.name}</span>
+                      <span className="text-purple-300">
+                        {option.votes.toLocaleString()} votes
+                      </span>
+                    </div>
+                    <div className="h-10 bg-gray-800 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${percentage}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                        viewport={{ once: true }}
+                        className={`h-full bg-gradient-to-r ${option.color}`}
+                      />
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            <div className="mt-8 flex justify-center gap-4">
+              <button className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold hover:shadow-xl hover:shadow-purple-500/30 transition-all">
+                Vote Now
+              </button>
+              <button className="px-8 py-3 bg-white/10 backdrop-blur rounded-full font-semibold border border-white/20 hover:bg-white/20 transition-all">
+                See Results
+              </button>
+            </div>
+
+            <p className="text-center text-sm text-gray-500 mt-6">
+              10,109 votes • Updated live
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Top Artists Today */}
+      <section className="py-20 px-4 bg-gradient-to-b from-black to-black/30">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Top Artists Today 🎶
+            </h2>
+            <p className="text-xl text-gray-400">
+              Voted by the community – updated live
+            </p>
+          </motion.div>
+
+          <TopArtistsTable />
+        </div>
+      </section>
+
+      {/* Top Weekly Songs */}
+      <section className="py-20 px-4 bg-gradient-to-b from-black/30 to-black">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Top Songs dieser Woche 📊
+            </h2>
+            <p className="text-xl text-gray-400">
+              Die meistabgespielten Tracks der aktuellen Woche
+            </p>
+          </motion.div>
+
+          <TopWeeklySongsTable />
         </div>
       </section>
 
