@@ -12,6 +12,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Home from "./pages/Home";
 import InviteRedirect from "./pages/InviteRedirect";
 import Profile from "./pages/Profile";
+import ArtistDetail from "./pages/ArtistDetail";
 
 
 // 🔐 Nur für geschützte Bereiche (Dashboard usw.)
@@ -102,7 +103,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           }
         />
 
-        
+        <Route path="/artist/:artistId" element={<ArtistDetail />} />
+
 
 
         {/* 🟢 Öffentlich zugängliche Session-Seite */}

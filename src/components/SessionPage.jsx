@@ -700,10 +700,10 @@ const SessionPage = () => {
 
         try {
           // 1. Cache-Suche
-                    // 1. Cache-Suche
+          // 1. Cache-Suche
           const matches = videoCache
             .map((item) => {
-              const normalizedCacheTitle = normalize(item.title_norm);  // 🔑 FIX: Jetzt wird der Cache-Titel auch bereinigt!
+              const normalizedCacheTitle = normalize(item.title_norm); // 🔑 FIX: Jetzt wird der Cache-Titel auch bereinigt!
               const ratio = levenshteinRatio(normalizedCacheTitle, normQuery);
               const includes = normalizedCacheTitle.includes(normQuery);
               return { ...item, ratio, includes };
@@ -1395,10 +1395,23 @@ const SessionPage = () => {
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                        {invite.invitee_name?.[0]?.toUpperCase() ||
-                          invite.invitee_email[0].toUpperCase()}
+                      <div className="w-10 h-10 rounded-full overflow-hidden border border-white/20 shadow bg-black/30">
+                        {invite.imageData &&
+                        typeof invite.imageData === "string" &&
+                        invite.imageData.startsWith("data:") ? (
+                          <img
+                            src={invite.imageData}
+                            alt="Profilbild"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                            {invite.invitee_name?.[0]?.toUpperCase() ||
+                              invite.invitee_email?.[0]?.toUpperCase()}
+                          </div>
+                        )}
                       </div>
+
                       <div>
                         <p className="font-semibold text-gray-800">
                           {invite.invitee_name || "Unbenannt"}
@@ -1512,15 +1525,36 @@ const SessionPage = () => {
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               Live dabei ({liveParticipants.length})
             </h3>
+
             <div className="space-y-2">
               {liveParticipants.map((p, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
+                <div key={i} className="flex items-center gap-3 text-sm">
+                  {/* Live-Indikator */}
                   <span className="text-green-600">●</span>
-                  <span>
+
+                  {/* Avatar */}
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-black/30 border border-white/30">
+                    {p.profileImage &&
+                    typeof p.profileImage === "string" &&
+                    p.profileImage.startsWith("data:") ? (
+                      <img
+                        src={p.profileImage}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                        {p.name?.[0]?.toUpperCase() || "?"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Name + Host-Krone */}
+                  <span className="flex items-center gap-1 text-gray-800 font-medium">
                     {p.name}
                     {p.isHost && (
-                      <span className="ml-1 text-indigo-600 font-semibold">
-                        Host
+                      <span title="Host" className="text-yellow-500">
+                        👑
                       </span>
                     )}
                   </span>
