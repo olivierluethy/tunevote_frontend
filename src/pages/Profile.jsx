@@ -15,6 +15,11 @@ import {
   TrendingUp,
   TrendingDown,
   Zap,
+  Headphones,
+  Music,
+  Users,
+  Repeat,
+  Clock,
 } from "lucide-react";
 import axios from "axios";
 
@@ -39,6 +44,13 @@ export default function Profile() {
   const [success, setSuccess] = useState(false);
   const fileInputRef = useRef(null);
 
+  const [topSongs, setTopSongs] = useState([]);
+  const [recentListens, setRecentListens] = useState([]);
+  const [maxSongSeconds, setMaxSongSeconds] = useState(1); // Für Balken-Länge
+
+  const [listeningStats, setListeningStats] = useState(null);
+  const [topArtists, setTopArtists] = useState([]);
+
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -60,10 +72,23 @@ export default function Profile() {
       }
 
       try {
-        const [profileRes, statsRes] = await Promise.all([
-          api.get("/profile", { headers: getAuthHeaders() }),
-          api.get("/profile/user-stats", { headers: getAuthHeaders() }),
-        ]);
+        const [profileRes, statsRes, listeningRes, recentListensRes] =
+  await Promise.all([
+    api.get("/profile", { headers: getAuthHeaders() }),
+    api.get("/profile/user-stats", { headers: getAuthHeaders() }),
+    api.get("/profile/listening-summary", { headers: getAuthHeaders() }),
+    api.get("/profile/recent-listens", { headers: getAuthHeaders() }),
+  ]);
+
+
+        setListeningStats(listeningRes.data.stats);
+
+        setTopSongs(listeningRes.data.topSongs);
+        setMaxSongSeconds(
+          Math.max(...listeningRes.data.topSongs.map((s) => s.total_seconds), 1),
+        );
+        setRecentListens(recentListensRes.data.recentListens);
+        setTopArtists(listeningRes.data.topArtists);
 
         const {
           username = "",
@@ -202,6 +227,22 @@ export default function Profile() {
       );
     }
   };
+
+  // Direkt in Profile.jsx über oder unter den Imports einfügen
+  function StatCard({ icon: Icon, value, label, gradientFrom, gradientTo }) {
+    return (
+      <div
+        className={`backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all`}
+        style={{
+          background: `linear-gradient(to right, ${gradientFrom}, ${gradientTo})`,
+        }}
+      >
+        {Icon && <Icon className="w-10 h-10 mx-auto mb-3 text-white" />}
+        <p className="text-3xl font-bold text-white">{value}</p>
+        <p className="text-white/70 text-sm">{label}</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -442,6 +483,150 @@ export default function Profile() {
             </div>
           </div>
         </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+          <StatCard
+            icon={Headphones}
+            value={`${listeningStats?.total_minutes || 0} min`}
+            label="Hörzeit gesamt"
+          />
+
+          <StatCard
+            icon={Music}
+            value={listeningStats?.song_listens || 0}
+            label="Songs gehört"
+          />
+
+          <StatCard
+            icon={Users}
+            value={listeningStats?.sessions_count || 0}
+            label="Sessions aktiv"
+          />
+
+          <StatCard
+            icon={Repeat}
+            value={
+              listeningStats
+                ? Math.round(
+                    listeningStats.song_listens /
+                      Math.max(listeningStats.sessions_count, 1),
+                  )
+                : 0
+            }
+            label="Ø Songs / Session"
+          />
+        </div>
+
+        {topArtists.length > 0 && (
+          <div className="mt-10">
+            <h3 className="text-2xl font-bold text-white mb-6">Top Artists</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {topArtists.map((artist, i) => (
+                <div
+  key={artist.artist_id}
+  onClick={() => navigate(`/artist/${artist.artist_id}`)}
+  className="flex items-center gap-4 p-4 rounded-xl bg-white/10 border border-white/20
+             cursor-pointer hover:bg-white/20 transition-all"
+>
+
+                  {artist.image_url ? (
+                    <img
+                      src={artist.image_url}
+                      alt={artist.name}
+                      className="w-14 h-14 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-purple-600 flex items-center justify-center">
+                      <User className="w-7 h-7 text-white" />
+                    </div>
+                  )}
+
+                  <div className="flex-1">
+                    <p className="text-white font-medium">{artist.name}</p>
+                    <p className="text-white/60 text-sm">
+                      {Math.floor(artist.total_seconds / 60)} Minuten gehört
+                    </p>
+                  </div>
+
+                  <span className="text-white/40 text-sm font-semibold">
+                    #{i + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {topSongs.map((song, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-4 p-4 rounded-xl bg-white/10 border border-white/20"
+          >
+            <img
+              src={song.thumbnail}
+              className="w-14 h-14 rounded-lg object-cover"
+            />
+
+            <div className="flex-1">
+              <p className="text-white font-medium">{song.title}</p>
+              <p className="text-white/60 text-sm">
+                {Math.floor(song.total_seconds / 60)} Minuten
+              </p>
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
+                  style={{
+                    width: `${Math.min(
+                      (song.total_seconds / maxSongSeconds) * 100,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <ul className="space-y-3">
+          {recentListens.map((l, i) => (
+            <li
+              key={i}
+              className="flex items-center gap-4 p-4 rounded-xl bg-white/5"
+            >
+              <img src={l.thumbnail} className="w-12 h-12 rounded-md" />
+              <div className="flex-1">
+                <p className="text-white">{l.title}</p>
+                <p className="text-white/60 text-sm">
+                  {l.completed ? "Komplett gehört" : "Teilweise gehört"} ·{" "}
+                  {Math.floor(l.listen_seconds / 60)} min
+                </p>
+              </div>
+             <span className="text-white/40 text-xs flex items-center gap-1">
+  <Clock className="w-4 h-4" />
+
+  {(() => {
+    const date = new Date(l.listened_from);
+
+    const datePart = date.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const timePart = date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return `${datePart} · ${timePart}`;
+  })()}
+</span>
+
+            </li>
+          ))}
+        </ul>
 
         {/* Bearbeitungsformular */}
         <form
