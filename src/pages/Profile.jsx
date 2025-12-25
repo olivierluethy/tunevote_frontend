@@ -22,7 +22,7 @@ import {
   Clock,
 } from "lucide-react";
 import axios from "axios";
-import { Line } from 'react-chartjs-2';
+import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -33,7 +33,7 @@ import {
   Tooltip,
   Legend,
   Filler, // für gefüllte Fläche unter der Linie
-} from 'chart.js';
+} from "chart.js";
 
 ChartJS.register(
   CategoryScale,
@@ -43,7 +43,7 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 );
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -75,9 +75,9 @@ export default function Profile() {
   const [topArtists, setTopArtists] = useState([]);
 
   const [artistModalOpen, setArtistModalOpen] = useState(false);
-const [activeArtist, setActiveArtist] = useState(null);
-const [artistInsights, setArtistInsights] = useState(null);
-const [artistLoading, setArtistLoading] = useState(false);
+  const [activeArtist, setActiveArtist] = useState(null);
+  const [artistInsights, setArtistInsights] = useState(null);
+  const [artistLoading, setArtistLoading] = useState(false);
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -92,121 +92,124 @@ const [artistLoading, setArtistLoading] = useState(false);
     Authorization: `Bearer ${token}`,
   });
 
-  const ListeningTrendChart = ({ dailyListens, dailySessions, maxDailySeconds }) => {
-  const today = new Date();
-  const labels = [];
-  const dataPoints = [];
+  const ListeningTrendChart = ({
+    dailyListens,
+    dailySessions,
+    maxDailySeconds,
+  }) => {
+    const today = new Date();
+    const labels = [];
+    const dataPoints = [];
 
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
+      const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
 
-    labels.push(dateStr.slice(5)); // z.B. "07-15"
+      labels.push(dateStr.slice(5)); // z.B. "07-15"
 
-    const dayData = dailyListens.find(d => d.date === dateStr);
-    dataPoints.push(dayData ? dayData.seconds / 60 : 0); // in Minuten
-  }
+      const dayData = dailyListens.find((d) => d.date === dateStr);
+      dataPoints.push(dayData ? dayData.seconds / 60 : 0); // in Minuten
+    }
 
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        label: 'Hördauer pro Tag (Minuten)',
-        data: dataPoints,
-        borderColor: '#a855f7',
-        backgroundColor: 'rgba(168, 85, 247, 0.3)',
-        fill: true,
-        tension: 0.3,
-        pointBackgroundColor: '#a855f7',
-        pointBorderColor: '#fff',
-        pointHoverRadius: 6,
+    const chartData = {
+      labels,
+      datasets: [
+        {
+          label: "Hördauer pro Tag (Minuten)",
+          data: dataPoints,
+          borderColor: "#a855f7",
+          backgroundColor: "rgba(168, 85, 247, 0.3)",
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: "#a855f7",
+          pointBorderColor: "#fff",
+          pointHoverRadius: 6,
+        },
+        // Optionale Referenzlinie für maxDailySeconds
+        {
+          label: "Maximal mögliche Hördauer",
+          data: Array(30).fill(maxDailySeconds / 60), // in Minuten
+          borderColor: "rgba(255,255,255,0.2)",
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    };
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: Math.ceil((maxDailySeconds / 60) * 1.1), // 10% Puffer über Max
+          title: { display: true, text: "Minuten", color: "#fff" },
+          ticks: { color: "#ccc" },
+          grid: { color: "rgba(255,255,255,0.1)" },
+        },
+        x: {
+          title: { display: true, text: "Datum", color: "#fff" },
+          ticks: { color: "#ccc" },
+          grid: { display: false },
+        },
       },
-      // Optionale Referenzlinie für maxDailySeconds
-      {
-        label: 'Maximal mögliche Hördauer',
-        data: Array(30).fill(maxDailySeconds / 60), // in Minuten
-        borderColor: 'rgba(255,255,255,0.2)',
-        borderDash: [5, 5],
-        pointRadius: 0,
-        fill: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const labelStr = context.label; // z.B. "07-15"
+              const minutes = context.parsed.y;
+
+              const dayEntry = dailySessions.find(
+                (d) => d.date.slice(5) === labelStr,
+              );
+              const sessions = dayEntry?.sessions || [];
+
+              if (sessions.length === 0) {
+                return `Keine Sessions an diesem Tag`;
+              }
+
+              const sessionLines = sessions.map(
+                (s) =>
+                  `${s.title || "Unbenannte Session"} • ${s.minutes} min • ${new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+              );
+
+              return [`${minutes} Minuten insgesamt`, ...sessionLines];
+            },
+          },
+        },
       },
-    ],
+    };
+
+    return (
+      <div className="h-64 w-full">
+        <Line data={chartData} options={options} />
+      </div>
+    );
   };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      y: {
-        beginAtZero: true,
-        max: Math.ceil(maxDailySeconds / 60 * 1.1), // 10% Puffer über Max
-        title: { display: true, text: 'Minuten', color: '#fff' },
-        ticks: { color: '#ccc' },
-        grid: { color: 'rgba(255,255,255,0.1)' },
-      },
-      x: {
-        title: { display: true, text: 'Datum', color: '#fff' },
-        ticks: { color: '#ccc' },
-        grid: { display: false },
-      },
-    },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            const labelStr = context.label; // z.B. "07-15"
-            const minutes = context.parsed.y;
-
-            const dayEntry = dailySessions.find(d => d.date.slice(5) === labelStr);
-            const sessions = dayEntry?.sessions || [];
-
-            if (sessions.length === 0) {
-              return `Keine Sessions an diesem Tag`;
-            }
-
-            const sessionLines = sessions.map(s =>
-              `${s.title || 'Unbenannte Session'} • ${s.minutes} min • ${new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-            );
-
-            return [
-              `${minutes} Minuten insgesamt`,
-              ...sessionLines
-            ];
-          }
-        }
-      },
-    },
-  };
-
-  return (
-    <div className="h-64 w-full">
-      <Line data={chartData} options={options} />
-    </div>
-  );
-};
-
 
   const openArtistModal = async (artist) => {
-  setActiveArtist(artist);
-  setArtistModalOpen(true);
-  setArtistInsights(null); // zurücksetzen
-  setArtistLoading(true);
+    setActiveArtist(artist);
+    setArtistModalOpen(true);
+    setArtistInsights(null); // zurücksetzen
+    setArtistLoading(true);
 
-  try {
-    const res = await api.get(
-      `/profile/artist/${artist.artist_id}/insights`,
-      { headers: getAuthHeaders() }
-    );
-    setArtistInsights(res.data);
-  } catch (err) {
-    console.error("Artist insights load failed", err);
-    // Optional: setError("Konnte Artist-Insights nicht laden...");
-  } finally {
-    setArtistLoading(false);
-  }
-};
+    try {
+      const res = await api.get(
+        `/profile/artist/${artist.artist_id}/insights`,
+        { headers: getAuthHeaders() },
+      );
+      setArtistInsights(res.data);
+    } catch (err) {
+      console.error("Artist insights load failed", err);
+      // Optional: setError("Konnte Artist-Insights nicht laden...");
+    } finally {
+      setArtistLoading(false);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -378,25 +381,27 @@ const [artistLoading, setArtistLoading] = useState(false);
 
   // Direkt in Profile.jsx über oder unter den Imports einfügen
   function StatCard({ icon: Icon, value, label, gradientFrom, gradientTo }) {
-  const hasGradient = gradientFrom && gradientTo;
+    const hasGradient = gradientFrom && gradientTo;
 
-  return (
-    <div
-      className={`backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all ${
-        hasGradient ? "" : "bg-white/10"
-      }`}
-      style={
-        hasGradient
-          ? { background: `linear-gradient(to right, ${gradientFrom}, ${gradientTo})` }
-          : {}
-      }
-    >
-      {Icon && <Icon className="w-10 h-10 mx-auto mb-3 text-white" />}
-      <p className="text-3xl font-bold text-white">{value}</p>
-      <p className="text-white/70 text-sm">{label}</p>
-    </div>
-  );
-}
+    return (
+      <div
+        className={`backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all ${
+          hasGradient ? "" : "bg-white/10"
+        }`}
+        style={
+          hasGradient
+            ? {
+                background: `linear-gradient(to right, ${gradientFrom}, ${gradientTo})`,
+              }
+            : {}
+        }
+      >
+        {Icon && <Icon className="w-10 h-10 mx-auto mb-3 text-white" />}
+        <p className="text-3xl font-bold text-white">{value}</p>
+        <p className="text-white/70 text-sm">{label}</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -678,10 +683,10 @@ const [artistLoading, setArtistLoading] = useState(false);
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {topArtists.map((artist, i) => (
                 <div
-  key={artist.artist_id}
-  onClick={() => openArtistModal(artist)}  // ← NEU statt navigate
-  className="flex items-center gap-4 p-4 rounded-xl bg-white/10 border border-white/20 cursor-pointer hover:bg-white/20 transition-all"
->
+                  key={artist.artist_id}
+                  onClick={() => openArtistModal(artist)} // ← NEU statt navigate
+                  className="flex items-center gap-4 p-4 rounded-xl bg-white/10 border border-white/20 cursor-pointer hover:bg-white/20 transition-all"
+                >
                   {artist.image_url ? (
                     <img
                       src={artist.image_url}
@@ -780,192 +785,214 @@ const [artistLoading, setArtistLoading] = useState(false);
         </ul>
 
         {artistModalOpen && (
-  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center px-4">
-    <div className="relative max-w-5xl w-full max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-purple-900 via-black to-pink-900 border border-white/20 p-8 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center px-4">
+            <div className="relative max-w-5xl w-full max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-purple-900 via-black to-pink-900 border border-white/20 p-8 shadow-2xl">
+              {/* Schließen-Button */}
+              <button
+                onClick={() => {
+                  setArtistModalOpen(false);
+                  setArtistInsights(null);
+                  setActiveArtist(null);
+                }}
+                className="absolute top-5 right-5 text-white/60 hover:text-white text-3xl font-bold transition-colors"
+              >
+                ✕
+              </button>
 
-      {/* Schließen-Button */}
-      <button
-        onClick={() => {
-          setArtistModalOpen(false);
-          setArtistInsights(null);
-          setActiveArtist(null);
-        }}
-        className="absolute top-5 right-5 text-white/60 hover:text-white text-3xl font-bold transition-colors"
-      >
-        ✕
-      </button>
+              {artistLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="text-white text-xl">Lade Insights...</div>
+                </div>
+              ) : artistInsights && activeArtist ? (
+                <>
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-10">
+                    <img
+                      src={
+                        activeArtist.image_url ||
+                        "https://via.placeholder.com/96"
+                      }
+                      alt={activeArtist.name}
+                      className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-purple-500/40 shadow-lg"
+                    />
+                    <div className="flex-1 text-center sm:text-left">
+                      <h2 className="text-3xl sm:text-4xl font-bold text-white">
+                        {activeArtist.name}
+                      </h2>
+                      <p className="text-white/60 mt-1">
+                        Dein persönliches Hörverhalten
+                      </p>
+                    </div>
+                    <Link
+                      to={`/artist/${activeArtist.artist_id}`}
+                      className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-medium transition-colors whitespace-nowrap"
+                    >
+                      Zur Artist-Übersicht →
+                    </Link>
+                  </div>
 
-      {artistLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="text-white text-xl">Lade Insights...</div>
-        </div>
-      ) : artistInsights && activeArtist ? (
-        <>
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-10">
-            <img
-              src={activeArtist.image_url || "https://via.placeholder.com/96"}
-              alt={activeArtist.name}
-              className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-purple-500/40 shadow-lg"
-            />
-            <div className="flex-1 text-center sm:text-left">
-              <h2 className="text-3xl sm:text-4xl font-bold text-white">
-                {activeArtist.name}
-              </h2>
-              <p className="text-white/60 mt-1">Dein persönliches Hörverhalten</p>
-            </div>
-            <Link
-              to={`/artist/${activeArtist.artist_id}`}
-              className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-medium transition-colors whitespace-nowrap"
-            >
-              Zur Artist-Übersicht →
-            </Link>
-          </div>
+                  {/* Statistik-Karten */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+                    <StatCard
+                      icon={Headphones}
+                      value={`${artistInsights.total_minutes || 0} min`}
+                      label="Hörzeit"
+                    />
+                    <StatCard
+                      icon={Music}
+                      value={artistInsights.song_count || 0}
+                      label="Songs gehört"
+                    />
+                    <StatCard
+                      icon={Users}
+                      value={artistInsights.session_count || 0}
+                      label="Sessions"
+                    />
+                    <StatCard
+                      icon={Repeat}
+                      value={artistInsights.avg_minutes_per_song || 0}
+                      label="Ø Minuten / Song"
+                    />
+                  </div>
 
-          {/* Statistik-Karten */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-            <StatCard
-              icon={Headphones}
-              value={`${artistInsights.total_minutes || 0} min`}
-              label="Hörzeit"
-            />
-            <StatCard
-              icon={Music}
-              value={artistInsights.song_count || 0}
-              label="Songs gehört"
-            />
-            <StatCard
-              icon={Users}
-              value={artistInsights.session_count || 0}
-              label="Sessions"
-            />
-            <StatCard
-              icon={Repeat}
-              value={artistInsights.avg_minutes_per_song || 0}
-              label="Ø Minuten / Song"
-            />
-          </div>
-
-          {/* Top Songs */}
-          {artistInsights.top_songs?.length > 0 && (
-            <>
-              <h3 className="text-2xl font-bold text-white mb-6">
-                Deine meistgehörten Songs
-              </h3>
-              <div className="space-y-4 mb-12">
-                {artistInsights.top_songs.map((song, i) => (
-                  <div
-                    key={song.queue_item_id || i}
-                    className="p-4 rounded-xl bg-white/5 border border-white/10"
-                  >
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-white/70 font-semibold">#{i + 1}</span>
-                        <p className="text-white font-medium">{song.title}</p>
+                  {/* Top Songs */}
+                  {artistInsights.top_songs?.length > 0 && (
+                    <>
+                      <h3 className="text-2xl font-bold text-white mb-6">
+                        Deine meistgehörten Songs
+                      </h3>
+                      <div className="space-y-4 mb-12">
+                        {artistInsights.top_songs.map((song, i) => (
+                          <div
+                            key={song.queue_item_id || i}
+                            className="p-4 rounded-xl bg-white/5 border border-white/10"
+                          >
+                            <div className="flex justify-between items-center mb-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-white/70 font-semibold">
+                                  #{i + 1}
+                                </span>
+                                <p className="text-white font-medium">
+                                  {song.title}
+                                </p>
+                              </div>
+                              <span className="text-white/70 text-sm">
+                                {Math.floor(song.total_seconds / 60)} min
+                              </span>
+                            </div>
+                            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                                style={{
+                                  width: `${
+                                    artistInsights.max_song_seconds
+                                      ? (song.total_seconds /
+                                          artistInsights.max_song_seconds) *
+                                        100
+                                      : 0
+                                  }%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <span className="text-white/70 text-sm">
-                        {Math.floor(song.total_seconds / 60)} min
-                      </span>
-                    </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
-                        style={{
-                          width: `${
-                            artistInsights.max_song_seconds
-                              ? (song.total_seconds / artistInsights.max_song_seconds) * 100
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+                    </>
+                  )}
 
-          {artistInsights.daily_listens?.length > 0 && (
-  <>
-    <h3 className="text-2xl font-bold text-white mb-6">
-      Hörtrend (letzte 30 Tage)
-    </h3>
-    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-      <ListeningTrendChart
-        dailyListens={artistInsights.daily_listens}
-        dailySessions={artistInsights.daily_sessions} // ← neu von API
-        maxDailySeconds={artistInsights.max_daily_seconds}
-      />
-    </div>
-  </>
-)}
+                  <h3 className="text-2xl font-bold text-white mb-6">
+                        Currently inside of this session:
+                      </h3>
 
-          {/* Hörfrequenz (Sparkline / Histogramm) */}
-          {artistInsights.daily_listens?.length > 0 && (
-            <>
-              <h3 className="text-2xl font-bold text-white mb-6">
-                Hörfrequenz (letzte 30 Tage)
-              </h3>
-              <div className="flex items-end gap-1 h-32 bg-white/5 rounded-xl p-4 border border-white/10">
-                {artistInsights.daily_listens.map((d, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 bg-gradient-to-t from-purple-600 to-purple-400 rounded-t transition-all duration-300"
-                    style={{
-                      height: `${
-                        artistInsights.max_daily_seconds
-                          ? (d.seconds / artistInsights.max_daily_seconds) * 100
-                          : 0
-                      }%`,
-                    }}
-                    title={`${d.date}: ${Math.floor(d.seconds / 60)} min`}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+                  {artistInsights.daily_listens?.length > 0 && (
+                    <>
+                      <h3 className="text-2xl font-bold text-white mb-6">
+                        Hörtrend (letzte 30 Tage)
+                      </h3>
+                      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                        <ListeningTrendChart
+                          dailyListens={artistInsights.daily_listens}
+                          dailySessions={artistInsights.daily_sessions} // ← neu von API
+                          maxDailySeconds={artistInsights.max_daily_seconds}
+                        />
+                      </div>
+                    </>
+                  )}
 
-          {/* Wichtigste Sessions */}
-          {artistInsights.sessions?.length > 0 && (
-            <>
-              <h3 className="text-2xl font-bold text-white mt-12 mb-6">
-                Sessions mit hohem Artist-Anteil
-              </h3>
-              <div className="space-y-3">
-                {artistInsights.sessions.map((s) => (
-                  <div
-                    key={s.session_id}
-                    className="flex justify-between items-center p-4 rounded-xl bg-white/5 border border-white/10"
-                  >
-                    <div>
-                      <p className="text-white font-medium">
-                        {new Date(s.started_at).toLocaleDateString("de-DE", {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </p>
-                      <p className="text-white/60 text-sm">
-                        {new Date(s.started_at).toLocaleTimeString("de-DE", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                    <span className="text-white font-medium">
-                      {Math.floor(s.total_seconds / 60)} min
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </>
-      ) : null}
-    </div>
-  </div>
-)}
+                  {/* Hörfrequenz (Sparkline / Histogramm) */}
+                  {artistInsights.daily_listens?.length > 0 && (
+                    <>
+                      <h3 className="text-2xl font-bold text-white mb-6">
+                        Hörfrequenz (letzte 30 Tage)
+                      </h3>
+                      <div className="flex items-end gap-1 h-32 bg-white/5 rounded-xl p-4 border border-white/10">
+                        {artistInsights.daily_listens.map((d, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 bg-gradient-to-t from-purple-600 to-purple-400 rounded-t transition-all duration-300"
+                            style={{
+                              height: `${
+                                artistInsights.max_daily_seconds
+                                  ? (d.seconds /
+                                      artistInsights.max_daily_seconds) *
+                                    100
+                                  : 0
+                              }%`,
+                            }}
+                            title={`${d.date}: ${Math.floor(d.seconds / 60)} min`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Wichtigste Sessions */}
+                  {artistInsights.sessions?.length > 0 && (
+                    <>
+                      <h3 className="text-2xl font-bold text-white mt-12 mb-6">
+                        Sessions mit hohem Artist-Anteil
+                      </h3>
+                      <div className="space-y-3">
+                        {artistInsights.sessions.map((s) => (
+                          <div
+                            key={s.session_id}
+                            className="flex justify-between items-center p-4 rounded-xl bg-white/5 border border-white/10"
+                          >
+                            <div>
+                              <p className="text-white font-medium">
+                                {new Date(s.started_at).toLocaleDateString(
+                                  "de-DE",
+                                  {
+                                    weekday: "long",
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                  },
+                                )}
+                              </p>
+                              <p className="text-white/60 text-sm">
+                                {new Date(s.started_at).toLocaleTimeString(
+                                  "de-DE",
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
+                              </p>
+                            </div>
+                            <span className="text-white font-medium">
+                              {Math.floor(s.total_seconds / 60)} min
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         {/* Bearbeitungsformular */}
         <form
