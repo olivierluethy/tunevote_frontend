@@ -18,6 +18,10 @@ export default function ArtistDetail() {
   const [replyTo, setReplyTo] = useState(null);
 
   const token = localStorage.getItem("token");
+  const guestToken = localStorage.getItem("guestToken");
+  const userId = localStorage.getItem("userId");
+  const username = localStorage.getItem("username") || "User";
+
   const [replyToId, setReplyToId] = useState(null);
 
   const sendReply = async (message, parentId) => {
@@ -55,6 +59,15 @@ export default function ArtistDetail() {
     setReplyToId,
     sendReply,
   }) {
+    // Debug-Hilfe – kannst du später wieder entfernen
+    console.log(
+      "Shout:",
+      shout.id,
+      "is_own_shout:",
+      shout.is_own_shout,
+      "user_id:",
+      shout.user_id,
+    );
     const [replyMessage, setReplyMessage] = useState("");
 
     const handleReplySend = async () => {
@@ -105,14 +118,17 @@ export default function ArtistDetail() {
                 >
                   Antworten
                 </button>
-                {shout.user_id === loggedUserData?.id && (
-                  <button
-                    onClick={() => handleDeleteShout(shout.id)}
-                    className="hover:text-red-500 transition ml-2"
-                  >
-                    🗑️
-                  </button>
-                )}
+                {/* Löschbutton basierend auf LocalStorage userId */}
+                {String(shout.user_id) === String(userId) &&
+                  !shout.is_deleted && (
+                    <button
+                      onClick={() => handleDeleteShout(shout.id)}
+                      className="hover:text-red-500 transition ml-2"
+                      title="Kommentar löschen"
+                    >
+                      🗑️
+                    </button>
+                  )}
               </>
             )}
           </div>
@@ -416,6 +432,7 @@ export default function ArtistDetail() {
               replyToId={replyToId}
               setReplyToId={setReplyToId}
               sendReply={sendReply}
+              handleDeleteShout={handleDeleteShout}
             />
           ))}
         </div>
