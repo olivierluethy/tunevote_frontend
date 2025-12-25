@@ -22,8 +22,31 @@ import {
   Clock,
 } from "lucide-react";
 import axios from "axios";
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler, // für gefüllte Fläche unter der Linie
+} from 'chart.js';
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -68,6 +91,102 @@ const [artistLoading, setArtistLoading] = useState(false);
   const getAuthHeaders = () => ({
     Authorization: `Bearer ${token}`,
   });
+
+  const ListeningTrendChart = ({ dailyListens, dailySessions, maxDailySeconds }) => {
+  const today = new Date();
+  const labels = [];
+  const dataPoints = [];
+
+  for (let i = 29; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    labels.push(dateStr.slice(5)); // z.B. "07-15"
+
+    const dayData = dailyListens.find(d => d.date === dateStr);
+    dataPoints.push(dayData ? dayData.seconds / 60 : 0); // in Minuten
+  }
+
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: 'Hördauer pro Tag (Minuten)',
+        data: dataPoints,
+        borderColor: '#a855f7',
+        backgroundColor: 'rgba(168, 85, 247, 0.3)',
+        fill: true,
+        tension: 0.3,
+        pointBackgroundColor: '#a855f7',
+        pointBorderColor: '#fff',
+        pointHoverRadius: 6,
+      },
+      // Optionale Referenzlinie für maxDailySeconds
+      {
+        label: 'Maximal mögliche Hördauer',
+        data: Array(30).fill(maxDailySeconds / 60), // in Minuten
+        borderColor: 'rgba(255,255,255,0.2)',
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        beginAtZero: true,
+        max: Math.ceil(maxDailySeconds / 60 * 1.1), // 10% Puffer über Max
+        title: { display: true, text: 'Minuten', color: '#fff' },
+        ticks: { color: '#ccc' },
+        grid: { color: 'rgba(255,255,255,0.1)' },
+      },
+      x: {
+        title: { display: true, text: 'Datum', color: '#fff' },
+        ticks: { color: '#ccc' },
+        grid: { display: false },
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const labelStr = context.label; // z.B. "07-15"
+            const minutes = context.parsed.y;
+
+            const dayEntry = dailySessions.find(d => d.date.slice(5) === labelStr);
+            const sessions = dayEntry?.sessions || [];
+
+            if (sessions.length === 0) {
+              return `Keine Sessions an diesem Tag`;
+            }
+
+            const sessionLines = sessions.map(s =>
+              `${s.title || 'Unbenannte Session'} • ${s.minutes} min • ${new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            );
+
+            return [
+              `${minutes} Minuten insgesamt`,
+              ...sessionLines
+            ];
+          }
+        }
+      },
+    },
+  };
+
+  return (
+    <div className="h-64 w-full">
+      <Line data={chartData} options={options} />
+    </div>
+  );
+};
+
 
   const openArtistModal = async (artist) => {
   setActiveArtist(artist);
@@ -765,6 +884,21 @@ const [artistLoading, setArtistLoading] = useState(false);
               </div>
             </>
           )}
+
+          {artistInsights.daily_listens?.length > 0 && (
+  <>
+    <h3 className="text-2xl font-bold text-white mb-6">
+      Hörtrend (letzte 30 Tage)
+    </h3>
+    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+      <ListeningTrendChart
+        dailyListens={artistInsights.daily_listens}
+        dailySessions={artistInsights.daily_sessions} // ← neu von API
+        maxDailySeconds={artistInsights.max_daily_seconds}
+      />
+    </div>
+  </>
+)}
 
           {/* Hörfrequenz (Sparkline / Histogramm) */}
           {artistInsights.daily_listens?.length > 0 && (
