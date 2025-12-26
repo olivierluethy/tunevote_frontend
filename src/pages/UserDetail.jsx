@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { act, useEffect, useState } from "react";
 import { ArrowLeft, Music, Clock, User } from "lucide-react";
 import axios from "axios";
 
@@ -11,6 +11,11 @@ export default function UserDetail() {
   const [user, setUser] = useState(null);
   const [songs, setSongs] = useState([]);
   const [users, setUsers] = useState([]);
+  const [sessionCount, setSessionCount] = useState(0);
+  const [sessionWithoutVote, setSessionWithoutVote] = useState(0);
+  const [votesOnOwnSuggestions, setVotesOnOwnSuggestions] = useState(0);
+  const [liveSessions, setLiveSessions] = useState(0);
+  const [activeSession, setActiveSession] = useState(null);
 
   useEffect(() => {
     axios
@@ -19,6 +24,15 @@ export default function UserDetail() {
         setUser(res.data.user);
         setSongs(res.data.topSongs);
         setUsers(res.data.topUsers || []);
+        setSessionCount(res.data.sessionCount || 0);
+        setSessionWithoutVote(
+          res.data.sessionWithoutVote?.[0]?.session_count || 0,
+        );
+        setVotesOnOwnSuggestions(
+          res.data.votesOnOwnSuggestions?.[0]?.count || 0,
+        );
+        setLiveSessions(res.data.liveSessions?.[0]?.count || 0);
+        setActiveSession(res.data.activeSession || 0);
       })
       .catch(console.error);
   }, [userId]);
@@ -28,8 +42,10 @@ export default function UserDetail() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-pink-900 pt-20 px-6">
       <div className="max-w-4xl mx-auto">
-
-        <Link to="/profile" className="inline-flex items-center gap-2 text-white/70 hover:text-white mb-6">
+        <Link
+          to="/profile"
+          className="inline-flex items-center gap-2 text-white/70 hover:text-white mb-6"
+        >
           <ArrowLeft className="w-5 h-5" />
           Zurück zum Profil
         </Link>
@@ -60,14 +76,17 @@ export default function UserDetail() {
           Stats
         </h2>
 
+        {/* Numbers of sessions joined */}
+        <p>{sessionCount} Sessions beigetreten</p>
+
         <p>Has joined so many sessions</p>
         <p>Gewinne gegen Queue</p>
         <p>Längster Gewinn Streak</p>
-        <p>Votes auf eigene Songs</p>
+        <p>Votes auf eigene Songs {votesOnOwnSuggestions}</p>
         <p>Gesamtvotes (fremd)</p>
         <p>Erfolgreiche Fremd-Votes</p>
         <p>Verlorene Fremd-Votes</p>
-        <p>Sessions ohne Vote</p>
+        <p>Sessions ohne Vote {sessionWithoutVote}</p>
         <p>Eigene Songs mit Votes</p>
         <p>Global User Ranking</p>
         <p>Global Weekly Ranking</p>
@@ -75,10 +94,36 @@ export default function UserDetail() {
 
         <p>Hörzeit gesamt</p>
         <p>Songs gehört</p>
-        <p>Sessions aktiv</p>
+        <p>Sessions aktiv {liveSessions}</p>
         <p>Ø Songs / Session</p>
 
         <p>Currently listening in this session:</p>
+        {activeSession?.live && (
+          <div className="mb-6">
+            {activeSession.is_private ? (
+              <div className="p-4 rounded-xl bg-red-500/20 border border-red-400/30 text-white">
+                🔴 Gerade live in einer privaten Session
+              </div>
+            ) : (
+              <Link
+                to={activeSession.join_url}
+                className="block p-4 rounded-xl bg-green-500/20 border border-green-400/30 hover:bg-green-500/30 transition"
+              >
+                <p className="text-white font-semibold">
+                  🔴 Live in: {activeSession.name}
+                </p>
+                <p className="text-white/70 text-sm">
+                  👥 {activeSession.participant_count} Zuhörer gerade dabei
+                </p>
+                <p className="text-white/50 text-xs mt-1">
+                  Klicken um beizutreten
+                </p>
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* Anzeigen ab wann diese Person verhältnissmässig zu dir in keinen sessions drin ist, um diese Zeit zu nutzen, um dein allgemeines Ranking zu erhöhen. */}
 
         {/* Top Hörer */}
         <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
@@ -88,7 +133,10 @@ export default function UserDetail() {
 
         <div className="space-y-3 mb-10">
           {users.map((u) => (
-            <div key={u.id} className="p-4 rounded-xl bg-white/10 border border-white/20 flex items-center gap-4">
+            <div
+              key={u.id}
+              className="p-4 rounded-xl bg-white/10 border border-white/20 flex items-center gap-4"
+            >
               {u.profileImage ? (
                 <img
                   src={`data:image/jpeg;base64,${u.profileImage}`}
@@ -120,7 +168,6 @@ export default function UserDetail() {
           Shoutbox
         </h2>
         <p className="text-white/60">Hinterlasse einen Shout für diesen User</p>
-
       </div>
     </div>
   );
