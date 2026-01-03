@@ -9,7 +9,6 @@ import Dashboard from "./pages/Dashboard";
 import SessionPage from "./components/SessionPage";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-import Home from "./pages/Home";
 import InviteRedirect from "./pages/InviteRedirect";
 import Profile from "./pages/Profile";
 import ArtistDetail from "./pages/ArtistDetail";
