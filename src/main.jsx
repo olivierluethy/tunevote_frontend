@@ -32,7 +32,20 @@ const GuestOnly = ({ children }) => {
 };
 
 
-const HomeRedirect = () => <Home />;
+// 🏠 Logik für den Home-Pfad (/)
+const HomeRedirect = () => {
+  const token = localStorage.getItem("token");
+  const guestToken = localStorage.getItem("guestToken");
+
+  // Wenn eingeloggt (normal oder Gast) -> ab zum Dashboard
+  if (token || guestToken) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Wenn nicht eingeloggt -> schicke sie zum Login
+  // (Oder falls du eine echte Landingpage hast, hier <Home /> zurückgeben)
+  return <Navigate to="/login" replace />;
+};
 
 
 ReactDOM.createRoot(document.getElementById("root")).render(
