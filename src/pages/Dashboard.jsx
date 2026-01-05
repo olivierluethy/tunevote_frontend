@@ -310,7 +310,7 @@ export default function Dashboard() {
           <div className="flex items-center space-x-3">
             <Music className="w-8 h-8 text-purple-400" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Willkommen, <span className="text-white">{displayName}</span>!
+              Welcome, <span className="text-white">{displayName}</span>!
               {isGuest && (
                 <span className="text-sm text-yellow-400 ml-2">(Gast)</span>
               )}
@@ -368,7 +368,7 @@ export default function Dashboard() {
                         >
                           <User className="w-5 h-5 text-purple-400" />
                           <span className="text-white font-medium">
-                            Mein Profil
+                            My profile
                           </span>
                         </button>
                       )}
@@ -386,7 +386,7 @@ export default function Dashboard() {
                       >
                         <LogOut className="w-5 h-5 text-red-400" />
                         <span className="text-white font-medium">
-                          {isGuest ? "Verlassen" : "Abmelden"}
+                          {isGuest ? "Leave" : "Log out"}
                         </span>
                       </button>
                     )}
@@ -409,10 +409,9 @@ export default function Dashboard() {
             <div className="flex items-center space-x-3">
               <AlertCircle className="w-6 h-6 text-yellow-400" />
               <div>
-                <p className="font-semibold text-yellow-200">Gastmodus aktiv</p>
+                <p className="font-semibold text-yellow-200">Guest mode active</p>
                 <p className="text-sm text-yellow-300">
-                  Erstelle einen Account, um Sessions zu erstellen und zu
-                  löschen!
+                  Create an account to create and delete sessions!
                 </p>
               </div>
             </div>
@@ -421,7 +420,7 @@ export default function Dashboard() {
               className="px-5 py-2 bg-yellow-500 text-purple-900 font-bold rounded-xl hover:bg-yellow-400 transition-all flex items-center space-x-2"
             >
               <UserPlus className="w-5 h-5" />
-              <span>Account erstellen</span>
+              <span>Create account</span>
             </button>
           </motion.div>
         )}
@@ -431,17 +430,17 @@ export default function Dashboard() {
             {/* === Eingeladene Sessions anzeigen === */}
             <h2 className="text-3xl font-bold flex items-center space-x-3 mb-6">
               <UserPlus className="w-8 h-8 text-purple-400" />
-              <span>Einladungen</span>
+              <span>Invitations</span>
             </h2>
 
             {/* Gesendete Einladungen */}
 
             <div className="mb-8">
-              <h3 className="text-xl font-semibold mb-3">Von dir verschickt</h3>
+              <h3 className="text-xl font-semibold mb-3">Sent by you</h3>
 
               {sentInvites.length === 0 ? (
                 <p className="text-gray-300">
-                  Noch keine Einladungen verschickt.
+                  No invitations sent yet.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -521,10 +520,10 @@ export default function Dashboard() {
             {/* Empfangene Einladungen */}
             <div>
               <h3 className="text-xl font-semibold mb-3">
-                Von anderen erhalten
+                Received from others
               </h3>
               {receivedInvites.length === 0 ? (
-                <p className="text-gray-300">Keine ausstehenden Einladungen.</p>
+                <p className="text-gray-300">No pending invitations.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {receivedInvites.map((invite) => (
@@ -583,14 +582,14 @@ export default function Dashboard() {
                 <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
                   <Plus className="w-6 h-6" />
                 </div>
-                <h2 className="text-2xl font-bold">Neue Session starten</h2>
+                <h2 className="text-2xl font-bold">Start new session</h2>
               </div>
 
               <div className="flex flex-col gap-6">
                 {/* Titel */}
                 <input
                   type="text"
-                  placeholder="z.B. Summer Vibes 2025"
+                  placeholder="e.g. Summer Vibes 2025"
                   className="px-5 py-4 rounded-2xl bg-white/10 border border-white/20 placeholder-gray-400 focus:border-purple-400 focus:outline-none transition-all text-lg"
                   value={newSessionTitle}
                   onChange={(e) => setNewSessionTitle(e.target.value)}
@@ -600,7 +599,7 @@ export default function Dashboard() {
 
                 {/* Öffentlich / Privat Toggle */}
                 <div className="flex items-center justify-between">
-                  <span className="text-lg font-semibold">Sichtbarkeit:</span>
+                  <span className="text-lg font-semibold">Visibility:</span>
                   <div className="flex gap-4">
                     <button
                       type="button"
@@ -611,7 +610,7 @@ export default function Dashboard() {
                           : "bg-white/10 border-white/20"
                       }`}
                     >
-                      Öffentlich
+                      Public
                     </button>
 
                     <button
@@ -623,7 +622,7 @@ export default function Dashboard() {
                           : "bg-white/10 border-white/20"
                       }`}
                     >
-                      Privat
+                      Private
                     </button>
                   </div>
                 </div>
@@ -635,7 +634,7 @@ export default function Dashboard() {
                   className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-lg flex items-center space-x-3 hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                  <span>{loading ? "Wird erstellt..." : "Erstellen"}</span>
+                  <span>{loading ? "Creating..." : "Create"}</span>
                 </button>
               </div>
             </div>
@@ -646,7 +645,7 @@ export default function Dashboard() {
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold flex items-center space-x-3">
             <Radio className="w-8 h-8 text-purple-400" />
-            <span>Aktive Sessions</span>
+            <span>Active sessions</span>
           </h2>
           <p className="text-gray-400">
             {sessions.length} Session{sessions.length !== 1 ? "s" : ""}
@@ -662,14 +661,14 @@ export default function Dashboard() {
             <div className="w-32 h-32 mx-auto mb-6 rounded-full bg-white/5 backdrop-blur flex items-center justify-center">
               <Music className="w-16 h-16 text-gray-500" />
             </div>
-            <p className="text-xl text-gray-400">Noch keine Sessions</p>
+            <p className="text-xl text-gray-400">No sessions yet</p>
             {isGuest ? (
               <p className="text-gray-500">
                 Tritt einer Session bei oder erstelle einen Account!
               </p>
             ) : (
               <p className="text-gray-500">
-                Erstelle deine erste Session oben!
+                Create your first session above!
               </p>
             )}
           </motion.div>
@@ -713,7 +712,7 @@ export default function Dashboard() {
                   <div className="space-y-2 text-sm text-gray-300">
                     <p className="flex items-center space-x-2">
                       <Users className="w-4 h-4" />
-                      <span>{s.participant_count} Teilnehmer</span>
+                      <span>{s.participant_count} Participants</span>
                     </p>
                     <p className="flex items-center space-x-2">
                       <Clock className="w-4 h-4" />

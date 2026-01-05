@@ -116,7 +116,7 @@ export default function Profile() {
       labels,
       datasets: [
         {
-          label: "Hördauer pro Tag (Minuten)",
+          label: "Listening time per day (minutes)",
           data: dataPoints,
           borderColor: "#a855f7",
           backgroundColor: "rgba(168, 85, 247, 0.3)",
@@ -145,12 +145,12 @@ export default function Profile() {
         y: {
           beginAtZero: true,
           max: Math.ceil((maxDailySeconds / 60) * 1.1), // 10% Puffer über Max
-          title: { display: true, text: "Minuten", color: "#fff" },
+          title: { display: true, text: "minutes", color: "#fff" },
           ticks: { color: "#ccc" },
           grid: { color: "rgba(255,255,255,0.1)" },
         },
         x: {
-          title: { display: true, text: "Datum", color: "#fff" },
+          title: { display: true, text: "Date", color: "#fff" },
           ticks: { color: "#ccc" },
           grid: { display: false },
         },
@@ -169,15 +169,15 @@ export default function Profile() {
               const sessions = dayEntry?.sessions || [];
 
               if (sessions.length === 0) {
-                return `Keine Sessions an diesem Tag`;
+                return `No sessions on this day`;
               }
 
               const sessionLines = sessions.map(
                 (s) =>
-                  `${s.title || "Unbenannte Session"} • ${s.minutes} min • ${new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+                  `${s.title || "Untitled session"} • ${s.minutes} min • ${new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
               );
 
-              return [`${minutes} Minuten insgesamt`, ...sessionLines];
+              return [`${minutes} Total minutes`, ...sessionLines];
             },
           },
         },
@@ -407,7 +407,7 @@ export default function Profile() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-pink-900 flex items-center justify-center">
         <div className="text-white text-2xl">
-          Lade Profil und Statistiken...
+          Loading profile and statistics...
         </div>
       </div>
     );
@@ -426,16 +426,16 @@ export default function Profile() {
           </Link>
           <div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Mein Profil
+              My profile
             </h1>
-            <p className="text-white/70">Deine Daten und Voting-Statistiken</p>
+            <p className="text-white/70">Your data and voting statistics</p>
           </div>
         </div>
 
         {/* Meldungen */}
         {success && (
           <div className="mb-6 p-4 rounded-xl bg-green-500/20 border border-green-500/50 text-green-300 text-center font-medium animate-pulse">
-            Profil erfolgreich gespeichert!
+            Profile successfully saved!
           </div>
         )}
         {error && (
@@ -470,7 +470,7 @@ export default function Profile() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="absolute bottom-2 right-14 p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 hover:bg-white/30 transition-all opacity-0 group-hover:opacity-100"
-                title="Profilbild hochladen"
+                title="Upload profile picture"
               >
                 <Camera className="w-5 h-5 text-white" />
               </button>
@@ -481,7 +481,7 @@ export default function Profile() {
                   type="button"
                   onClick={handleDeleteImage}
                   className="absolute bottom-2 right-2 p-3 rounded-full bg-red-600/80 backdrop-blur-md border border-red-500/50 hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100"
-                  title="Profilbild löschen"
+                  title="Delete profile picture"
                 >
                   <Trash2 className="w-5 h-5 text-white" />
                 </button>
@@ -512,7 +512,7 @@ export default function Profile() {
                 <p className="text-3xl font-bold text-white">
                   {stats?.winsAgainstQueue || 0}
                 </p>
-                <p className="text-white/70 text-sm">Gewinne gegen Queue</p>
+                <p className="text-white/70 text-sm">Wins against Queue</p>
               </div>
 
               <div className="backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all">
@@ -520,7 +520,7 @@ export default function Profile() {
                 <p className="text-3xl font-bold text-white">
                   {stats?.maxStreakWinsAgainstQueue || 0}
                 </p>
-                <p className="text-white/70 text-sm">Längster Gewinn-Streak</p>
+                <p className="text-white/70 text-sm">Longest winning streak</p>
               </div>
 
               <div className="backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all">
@@ -528,7 +528,7 @@ export default function Profile() {
                 <p className="text-3xl font-bold text-white">
                   {stats?.votesOnOwnSuggestions || 0}
                 </p>
-                <p className="text-white/70 text-sm">Votes auf eigene Songs</p>
+                <p className="text-white/70 text-sm">Votes on your own songs</p>
               </div>
 
               <div className="backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 p-6 text-center hover:bg-white/15 transition-all">
@@ -537,7 +537,7 @@ export default function Profile() {
                   {stats?.votesOnOthersAndWon + stats?.votesOnOthersAndLost ||
                     0}
                 </p>
-                <p className="text-white/70 text-sm">Gesamtvotes (fremd)</p>
+                <p className="text-white/70 text-sm">Total votes (foreign)</p>
               </div>
             </div>
 
@@ -549,7 +549,7 @@ export default function Profile() {
                   <TrendingUp className="w-8 h-8 text-green-400" />
                   <div>
                     <p className="text-white font-semibold">
-                      Erfolgreiche Fremd-Votes
+                      Successful external votes
                     </p>
                     <p className="text-2xl font-bold text-white">
                       {stats?.votesOnOthersAndWon || 0}
@@ -557,8 +557,8 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="text-sm text-white/70 mb-2">
-                  Längster Streak: {stats?.maxStreakVotesOnWinningOthers || 0}{" "}
-                  in Folge
+                  Longest streak: {stats?.maxStreakVotesOnWinningOthers || 0}{" "}
+                  in sequence
                 </div>
                 <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
                   <div
@@ -576,7 +576,7 @@ export default function Profile() {
                   <TrendingDown className="w-8 h-8 text-red-400" />
                   <div>
                     <p className="text-white font-semibold">
-                      Verlorene Fremd-Votes
+                      Lost third-party votes
                     </p>
                     <p className="text-2xl font-bold text-white">
                       {stats?.votesOnOthersAndLost || 0}
@@ -584,8 +584,8 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="text-sm text-white/70 mb-2">
-                  Längster Streak: {stats?.maxStreakVotesOnLosingOthers || 0} in
-                  Folge
+                  Longest streak: {stats?.maxStreakVotesOnLosingOthers || 0} in
+                  sequence
                 </div>
                 <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
                   <div
@@ -603,7 +603,7 @@ export default function Profile() {
                   <Eye className="w-8 h-8 text-blue-400" />
                   <div>
                     <p className="text-white font-semibold">
-                      Sessions ohne Vote
+                      Sessions without vote
                     </p>
                     <p className="text-2xl font-bold text-white">
                       {stats?.sessionsWithoutVote || 0}
@@ -611,7 +611,7 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="text-sm text-white/70 mb-2">
-                  Längster Passiv-Streak:{" "}
+                  Longest passive streak:{" "}
                   {stats?.maxStreakSessionsWithoutVote || 0}
                 </div>
                 <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
@@ -630,9 +630,9 @@ export default function Profile() {
                   <Zap className="w-8 h-8 text-amber-400" />
                   <div>
                     <p className="text-white font-semibold">
-                      Eigene Songs mit Votes
+                      Own songs with votes
                     </p>
-                    <p className="text-sm text-white/70">aber nicht gewonnen</p>
+                    <p className="text-sm text-white/70">but not won</p>
                     <p className="text-2xl font-bold text-white">
                       {stats?.votesOnOwnButLost || 0}
                     </p>
@@ -647,19 +647,19 @@ export default function Profile() {
           <StatCard
             icon={Headphones}
             value={`${listeningStats?.total_minutes || 0} min`}
-            label="Hörzeit gesamt"
+            label="Total listening time"
           />
 
           <StatCard
             icon={Music}
             value={listeningStats?.song_listens || 0}
-            label="Songs gehört"
+            label="Songs listened to"
           />
 
           <StatCard
             icon={Users}
             value={listeningStats?.sessions_count || 0}
-            label="Sessions aktiv"
+            label="Sessions active"
           />
 
           <StatCard
@@ -702,7 +702,7 @@ export default function Profile() {
                   <div className="flex-1">
                     <p className="text-white font-medium">{artist.name}</p>
                     <p className="text-white/60 text-sm">
-                      {Math.floor(artist.total_seconds / 60)} Minuten gehört
+                      {Math.floor(artist.total_seconds / 60)} minutes listened to
                     </p>
                   </div>
 
@@ -728,7 +728,7 @@ export default function Profile() {
             <div className="flex-1">
               <p className="text-white font-medium">{song.title}</p>
               <p className="text-white/60 text-sm">
-                {Math.floor(song.total_seconds / 60)} Minuten
+                {Math.floor(song.total_seconds / 60)} minutes
               </p>
               <div className="h-2 bg-white/10 rounded-full overflow-hidden mt-2">
                 <div
@@ -755,7 +755,7 @@ export default function Profile() {
               <div className="flex-1">
                 <p className="text-white">{l.title}</p>
                 <p className="text-white/60 text-sm">
-                  {l.completed ? "Komplett gehört" : "Teilweise gehört"} ·{" "}
+                  {l.completed ? "Completely heard" : "Partially heard"} ·{" "}
                   {Math.floor(l.listen_seconds / 60)} min
                 </p>
               </div>
@@ -801,7 +801,7 @@ export default function Profile() {
 
               {artistLoading ? (
                 <div className="flex justify-center items-center h-64">
-                  <div className="text-white text-xl">Lade Insights...</div>
+                  <div className="text-white text-xl">Loading insights...</div>
                 </div>
               ) : artistInsights && activeArtist ? (
                 <>
@@ -820,14 +820,14 @@ export default function Profile() {
                         {activeArtist.name}
                       </h2>
                       <p className="text-white/60 mt-1">
-                        Dein persönliches Hörverhalten
+                        Your personal listening habits
                       </p>
                     </div>
                     <Link
                       to={`/artist/${activeArtist.artist_id}`}
                       className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-medium transition-colors whitespace-nowrap"
                     >
-                      Zur Artist-Übersicht →
+                      To the artist overview →
                     </Link>
                   </div>
 
@@ -836,12 +836,12 @@ export default function Profile() {
                     <StatCard
                       icon={Headphones}
                       value={`${artistInsights.total_minutes || 0} min`}
-                      label="Hörzeit"
+                      label="Listening time"
                     />
                     <StatCard
                       icon={Music}
                       value={artistInsights.song_count || 0}
-                      label="Songs gehört"
+                      label="Songs listened to"
                     />
                     <StatCard
                       icon={Users}
@@ -851,7 +851,7 @@ export default function Profile() {
                     <StatCard
                       icon={Repeat}
                       value={artistInsights.avg_minutes_per_song || 0}
-                      label="Ø Minuten / Song"
+                      label="Ø minutes / Song"
                     />
                   </div>
 
@@ -859,7 +859,7 @@ export default function Profile() {
                   {artistInsights.top_songs?.length > 0 && (
                     <>
                       <h3 className="text-2xl font-bold text-white mb-6">
-                        Deine meistgehörten Songs
+                        Your most listened to songs
                       </h3>
                       <div className="space-y-4 mb-12">
                         {artistInsights.top_songs.map((song, i) => (
@@ -907,7 +907,7 @@ export default function Profile() {
                   {artistInsights.daily_listens?.length > 0 && (
                     <>
                       <h3 className="text-2xl font-bold text-white mb-6">
-                        Hörtrend (letzte 30 Tage)
+                        Listening trend (last 30 days)
                       </h3>
                       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
                         <ListeningTrendChart
@@ -923,7 +923,7 @@ export default function Profile() {
                   {artistInsights.daily_listens?.length > 0 && (
                     <>
                       <h3 className="text-2xl font-bold text-white mb-6">
-                        Hörfrequenz (letzte 30 Tage)
+                        Listening frequency (last 30 days)
                       </h3>
                       <div className="flex items-end gap-1 h-32 bg-white/5 rounded-xl p-4 border border-white/10">
                         {artistInsights.daily_listens.map((d, i) => (
@@ -950,7 +950,7 @@ export default function Profile() {
                   {artistInsights.sessions?.length > 0 && (
                     <>
                       <h3 className="text-2xl font-bold text-white mt-12 mb-6">
-                        Sessions mit hohem Artist-Anteil
+                        Sessions with a high proportion of artists
                       </h3>
                       <div className="space-y-3">
                         {artistInsights.sessions.map((s) => (
@@ -1002,7 +1002,7 @@ export default function Profile() {
           <div>
             <label className="flex items-center gap-3 text-white/90 font-medium mb-3">
               <User className="w-5 h-5 text-purple-400" />
-              Benutzername
+              Username
             </label>
             <input
               type="text"
@@ -1018,7 +1018,7 @@ export default function Profile() {
           <div>
             <label className="flex items-center gap-3 text-white/90 font-medium mb-3">
               <Mail className="w-5 h-5 text-purple-400" />
-              E-Mail-Adresse
+              E-mail address
             </label>
             <input
               type="email"
@@ -1031,26 +1031,26 @@ export default function Profile() {
 
           <div className="pt-6 border-t border-white/10">
             <h3 className="text-xl font-semibold text-white mb-4">
-              Passwort ändern (optional)
+              Change password (optional)
             </h3>
             <div className="space-y-4">
               <input
                 type="password"
                 name="currentPassword"
-                placeholder="Aktuelles Passwort"
+                placeholder="Current password"
                 className="w-full px-5 py-4 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-purple-400 transition-colors"
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input
                   type="password"
                   name="newPassword"
-                  placeholder="Neues Passwort (min. 8 Zeichen)"
+                  placeholder="New password (min. 8 characters)"
                   className="w-full px-5 py-4 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-purple-400 transition-colors"
                 />
                 <input
                   type="password"
                   name="confirmPassword"
-                  placeholder="Wiederholen"
+                  placeholder="Repeat"
                   className="w-full px-5 py-4 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-purple-400 transition-colors"
                 />
               </div>
@@ -1062,7 +1062,7 @@ export default function Profile() {
             className="w-full mt-8 py-5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-lg flex items-center justify-center gap-3 transition-all duration-300 shadow-lg hover:shadow-purple-500/25"
           >
             <Save className="w-6 h-6" />
-            Änderungen speichern
+            Save changes
           </button>
         </form>
       </div>
