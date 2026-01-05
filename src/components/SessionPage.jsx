@@ -24,7 +24,7 @@ const SessionPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [pauseDuration, setPauseDuration] = useState(30); // default 30 Sekunden
-  const [pauseDescription, setPauseDescription] = useState("Kurze Pause");
+  const [pauseDescription, setPauseDescription] = useState("Short break");
 
   const [liveParticipants, setLiveParticipants] = useState([]); // <-- NEU
   // === ADD NEW STATES – direkt nach den anderen useState (z. B. nach liveParticipants) ===
@@ -1163,7 +1163,7 @@ const SessionPage = () => {
             </div>
           ) : (
             <div className="px-3 py-2 bg-yellow-100 text-yellow-800 rounded">
-              Warte auf Host
+              Waiting for host
             </div>
           )}
           {isHost && !sessionLive && (
@@ -1178,7 +1178,7 @@ const SessionPage = () => {
             onClick={() => navigate("/dashboard")}
             className="text-gray-600"
           >
-            ← Zurück
+            ← Back
           </button>
           {isGuest && (
             <div className="text-sm text-gray-500">Gast: {displayName}</div>
@@ -1190,7 +1190,7 @@ const SessionPage = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200">
               <h2 className="text-2xl font-bold text-gray-800 mb-6">
-                Session-Namen bearbeiten
+                Edit session name
               </h2>
 
               <input
@@ -1200,7 +1200,7 @@ const SessionPage = () => {
                 onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 autoFocus
-                placeholder="Neuer Name..."
+                placeholder="New name..."
               />
 
               <div className="flex gap-3 mt-6">
@@ -1209,7 +1209,7 @@ const SessionPage = () => {
                   disabled={savingName || !editingName.trim()}
                   className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-md"
                 >
-                  {savingName ? "Speichert…" : "Speichern"}
+                  {savingName ? "Saves..." : "Save"}
                 </button>
 
                 <button
@@ -1217,7 +1217,7 @@ const SessionPage = () => {
                   disabled={savingName}
                   className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
                 >
-                  Abbrechen
+                  Cancel
                 </button>
               </div>
             </div>
@@ -1275,7 +1275,7 @@ const SessionPage = () => {
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
               <line x1="8.59" y1="10.49" x2="15.42" y2="6.51" />
             </svg>
-            <span className="share-text">Link teilen</span>
+            <span className="share-text">Share link</span>
           </button>
 
           {sessionLive && (
@@ -1298,9 +1298,9 @@ const SessionPage = () => {
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold mb-2">
               {votingPhase.phase === "suggesting" ? (
-                <>Songvorschläge einreichen</>
+                <>Submit song suggestions</>
               ) : (
-                <>Abstimmung läuft</>
+                <>Voting is underway</>
               )}
             </h2>
             <div className="text-5xl font-mono font-bold tracking-wider mb-3">
@@ -1324,8 +1324,8 @@ const SessionPage = () => {
             </div>
             <p className="mt-3 text-sm opacity-90">
               {votingPhase.phase === "suggesting"
-                ? "Schlage jetzt deinen Song vor!"
-                : "Stimme für deinen Favoriten ab!"}
+                ? "Submit your song now!"
+                : "Vote for your favorite!"}
             </p>
           </div>
         )}
@@ -1333,14 +1333,14 @@ const SessionPage = () => {
         {/* Optional: Hinweis, wenn gerade keine Phase aktiv ist */}
         {sessionLive && !votingPhase && isLiveJoined && (
           <div className="bg-gray-100 text-gray-700 p-4 rounded-lg text-center mb-6">
-            <p>Warte auf nächste Abstimmungsrunde…</p>
+            <p>Waiting for the next round of voting...</p>
           </div>
         )}
 
         {/* EINLADUNG PER E-MAIL – nur Host + private Session */}
         {isHost && session?.is_private === 1 && (
           <div className="bg-white p-4 rounded-lg shadow mb-6">
-            <h3 className="text-lg font-semibold mb-3">Einladung per E-Mail</h3>
+            <h3 className="text-lg font-semibold mb-3">Invitation by email</h3>
             <div className="flex gap-3 items-center">
               <input
                 type="email"
@@ -1355,17 +1355,17 @@ const SessionPage = () => {
                 disabled={!inviteEmail.trim()}
                 className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
-                Einladen
+                Invite
               </button>
             </div>
             {inviteStatus === "success" && (
               <p className="text-green-600 text-sm mt-2">
-                Einladung verschickt!
+                Invitation sent!
               </p>
             )}
             {inviteStatus === "error" && (
               <p className="text-red-600 text-sm mt-2">
-                Ungültige E-Mail oder Fehler beim Versand.
+                Invalid email or error sending.
               </p>
             )}
           </div>
@@ -1376,16 +1376,16 @@ const SessionPage = () => {
           <div className="bg-white p-4 rounded-lg shadow mb-6">
             <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
               <span className="flex items-center gap-2">
-                Teilnehmer verwalten
+                Manage participants
               </span>
               <span className="text-sm font-normal text-gray-500">
-                {acceptedInvites.length} akzeptiert
+                {acceptedInvites.length} accepted
               </span>
             </h3>
 
             {acceptedInvites.length === 0 ? (
               <p className="text-gray-500 text-center py-6">
-                Noch niemand hat die Einladung angenommen.
+                No one has accepted the invitation yet.
               </p>
             ) : (
               <div className="space-y-3">
@@ -1451,7 +1451,7 @@ const SessionPage = () => {
                       className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 transition font-medium flex items-center gap-2"
                     >
                       {removingUserId === invite.id ? (
-                        <>Wird entfernt…</>
+                        <>Will be removed...</>
                       ) : (
                         <>
                           <svg
@@ -1483,7 +1483,7 @@ const SessionPage = () => {
             {isPaused ? (
               <div className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded-lg shadow mb-6">
                 <h3 className="font-bold text-yellow-800 flex items-center gap-2">
-                  ⏸ Pause läuft
+                  ⏸ Break is in progress
                 </h3>
                 <p className="mt-2 text-yellow-700">
                   {pauseTitle || "Pause"} – noch{" "}
@@ -1501,7 +1501,7 @@ const SessionPage = () => {
             ) : currentSong ? (
               <div className="bg-green-100 border-2 border-green-500 p-4 rounded-lg shadow mb-6">
                 <h3 className="font-bold text-green-800 flex items-center gap-2">
-                  🎵 Jetzt läuft
+                  🎵 Now running
                 </h3>
                 <div className="flex items-center gap-3 mt-2">
                   <img
@@ -1511,7 +1511,7 @@ const SessionPage = () => {
                   />
                   <div>
                     <p className="font-semibold">{currentSong.title}</p>
-                    <p className="text-sm text-green-700">Live mit allen</p>
+                    <p className="text-sm text-green-700">Live with everyone</p>
                   </div>
                 </div>
               </div>
@@ -1523,7 +1523,7 @@ const SessionPage = () => {
         {session?.is_private === 1 && liveParticipants.length > 0 && (
           <div className="bg-white p-4 rounded-lg shadow mb-6">
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              Live dabei ({liveParticipants.length})
+              Live there ({liveParticipants.length})
             </h3>
 
             <div className="space-y-2">
@@ -1587,10 +1587,10 @@ const SessionPage = () => {
 
         {/* YouTube Suche + KI-Vorschläge */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">YouTube Suche</h2>
+          <h2 className="text-xl font-semibold mb-3">YouTube search</h2>
           <input
             type="text"
-            placeholder="Song suchen..."
+            placeholder="Search for song..."
             className="w-full border rounded p-2 mb-3"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -1616,7 +1616,7 @@ const SessionPage = () => {
                     onClick={() => proposeSong(video)}
                     className="bg-blue-600 text-white px-3 py-1 rounded text-xs"
                   >
-                    Vorschlagen
+                    Suggest
                   </button>
                 </div>
               ))}
@@ -1625,7 +1625,7 @@ const SessionPage = () => {
         </div>
 
         <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold mb-3">Pause hinzufügen</h2>
+          <h2 className="text-xl font-semibold mb-3">Add a pause</h2>
           <div className="flex gap-3 items-center">
             <input
               type="number"
@@ -1634,7 +1634,7 @@ const SessionPage = () => {
               onChange={(e) => setPauseDuration(Number(e.target.value))}
               className="border rounded p-2 w-20"
             />
-            <span className="text-sm text-gray-600">Sekunden</span>
+            <span className="text-sm text-gray-600">seconds</span>
             <input
               type="text"
               value={pauseDescription}
@@ -1662,7 +1662,7 @@ const SessionPage = () => {
               }}
               className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
             >
-              Pause hinzufügen
+              Add break
             </button>
           </div>
         </div>
@@ -1670,13 +1670,13 @@ const SessionPage = () => {
         {/* === Voting Round (Songs mit status = suggested) === */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">
-            🗳 Abstimmung (
+            🗳 Vote (
             {proposals.filter((p) => p.status === "suggested").length} / 5)
           </h2>
 
           {proposals.length === 0 ? (
             <p className="text-gray-500">
-              Keine vorgeschlagenen Songs aktuell.
+              No songs suggested at this time.
             </p>
           ) : (
             <div className="space-y-3">
