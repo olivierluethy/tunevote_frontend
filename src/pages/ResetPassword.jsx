@@ -35,7 +35,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:4000/reset-password", {
+      const res = await axios.post("https://api.tunevote.com/reset-password", {
         token,
         newPassword: password,
       });
