@@ -7,7 +7,7 @@ import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 import { PencilSquareIcon } from "@heroicons/react/24/outline";
 import unidecode from "unidecode";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "http://localhost:4000";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -112,7 +112,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
+        `http://localhost:4000/sessions/${sessionId}/current-phase`,
         { headers: getAuthHeaders() },
       );
 
@@ -154,7 +154,7 @@ const SessionPage = () => {
     setSavingName(true);
     try {
       await axios.patch(
-        `https://api.tunevote.com/sessions/${sessionId}`,
+        `http://localhost:4000/sessions/${sessionId}`,
         { title: newName },
         { headers: getAuthHeaders() },
       );
@@ -178,7 +178,7 @@ const SessionPage = () => {
 
     try {
       await axios.delete(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
         { headers: getAuthHeaders() },
       );
 
@@ -197,7 +197,7 @@ const SessionPage = () => {
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() },
       );
       setProposals(res.data || []);
@@ -209,13 +209,14 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() },
       );
       await loadProposals(); // Voting-Bereich aktualisieren
       await loadSessionData(); // Queue aktualisieren
     } catch (err) {
+      console.log("ERROR: with song id: " + songId);
       console.error("Voting error:", err);
       alert("Fehler beim Abstimmen");
     }
@@ -233,7 +234,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/invite`,
+        `http://localhost:4000/sessions/${sessionId}/invite`,
         { email: inviteEmail },
         { headers: getAuthHeaders() },
       );
@@ -254,7 +255,7 @@ const SessionPage = () => {
 
     if (!guestToken) {
       try {
-        const { data } = await axios.post("https://api.tunevote.com/guest/join", {
+        const { data } = await axios.post("http://localhost:4000/guest/join", {
           nickname,
         });
         guestToken = data.guestToken;
@@ -272,10 +273,10 @@ const SessionPage = () => {
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -299,7 +300,7 @@ const SessionPage = () => {
       if (sessRes.data.is_private === 1) {
         try {
           const invitesRes = await axios.get(
-            `https://api.tunevote.com/sessions/${sessionId}/invites/accepted`,
+            `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
             { headers: getAuthHeaders() },
           );
           setAcceptedInvites(invitesRes.data || []);
@@ -325,7 +326,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/participants`,
+        `http://localhost:4000/sessions/${sessionId}/participants`,
         { headers: getAuthHeaders() },
       );
       setLiveParticipants(res.data || []);
@@ -344,7 +345,7 @@ const SessionPage = () => {
       setVotingPhase({
         phase: data.phase,
         endsAt: data.endsAt,
-        duration: data.duration || (data.phase === "suggesting" ? 90 : 60),
+        duration: data.duration || (data.phase === "suggestion" ? 90 : 60),
         roundId: data.roundId,
       });
       const remaining = Math.max(
@@ -396,7 +397,7 @@ const SessionPage = () => {
           clearInterval(timer);
           // Optional: Phase automatisch zurücksetzen nach "closed" setzen (falls Server verspätet)
           if (
-            votingPhase.phase === "suggesting" ||
+            votingPhase.phase === "suggestion" ||
             votingPhase.phase === "voting"
           ) {
             setVotingPhase(null);
@@ -568,7 +569,7 @@ const SessionPage = () => {
   // === CACHE LADEN (außerhalb von useEffect!) ===
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/youtube-cache");
+      const res = await axios.get("http://localhost:4000/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -598,7 +599,7 @@ const SessionPage = () => {
       try {
         console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
           { headers: getAuthHeaders() },
         );
         setRecommendations(res.data || []);
@@ -668,7 +669,7 @@ const SessionPage = () => {
       if (youtubeId) {
         try {
           const res = await axios.get(
-            `https://api.tunevote.com/youtube-info/${youtubeId}`,
+            `http://localhost:4000/youtube-info/${youtubeId}`,
           );
           const info = res.data;
 
@@ -748,7 +749,7 @@ const SessionPage = () => {
               const norm = normalize(title);
 
               await axios.post(
-                "https://api.tunevote.com/youtube-cache",
+                "http://localhost:4000/youtube-cache",
                 { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
                 { headers: getAuthHeaders() },
               );
@@ -763,7 +764,7 @@ const SessionPage = () => {
             setAiLoading(true);
             try {
               const res = await axios.post(
-                `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+                `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
                 { query },
                 { headers: getAuthHeaders() },
               );
@@ -878,14 +879,14 @@ const SessionPage = () => {
 
       // Join Live Session mit korrekten Auth-Headers (User ODER Gast)
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() },
       );
 
       // Playback-Sync-Daten abrufen
       const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() },
       );
 
@@ -904,7 +905,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() },
         );
 
@@ -935,7 +936,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -959,7 +960,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
+        `http://localhost:4000/sessions/${sessionId}/start`,
         {},
         { headers: getAuthHeaders() },
       );
@@ -1061,7 +1062,7 @@ const SessionPage = () => {
 
       await axios
         .post(
-          `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+          `http://localhost:4000/sessions/${sessionId}/proposals`,
           { videoId, title, thumbnail },
           { headers: getAuthHeaders() },
         )
@@ -1094,7 +1095,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
+      const res = await axios.post("http://localhost:4000/guest/join", {
         nickname,
       });
 
@@ -1114,7 +1115,7 @@ const SessionPage = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-          <h2 className="text-2xl font-bold text-blue-700 mb-4">Willkommen!</h2>
+          <h2 className="text-2xl font-bold text-blue-700 mb-4">Welcome!</h2>
           <input
             type="text"
             placeholder="Name"
@@ -1127,7 +1128,7 @@ const SessionPage = () => {
             onClick={handleGuestJoin}
             className="w-full bg-blue-600 text-white py-3 rounded-lg"
           >
-            Beitreten
+            Join
           </button>
         </div>
       </div>
@@ -1166,14 +1167,75 @@ const SessionPage = () => {
               Waiting for host
             </div>
           )}
+
           {isHost && !sessionLive && (
-            <button
-              onClick={startSession}
-              className="px-4 py-2 bg-blue-600 text-white rounded"
-            >
-              Start Session
-            </button>
+            <div className="relative inline-block group">
+              <button
+                onClick={startSession}
+                disabled={queue.length === 0}
+                aria-disabled={queue.length === 0}
+                className={`
+        relative overflow-hidden
+        px-8 py-3.5 rounded-2xl font-bold text-lg tracking-wide
+        flex items-center gap-3
+        transition-all duration-300 transform active:scale-[0.97]
+        shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-400
+        ${
+          queue.length === 0
+            ? "bg-slate-600/60 text-slate-300 cursor-not-allowed shadow-none opacity-70"
+            : `
+              bg-gradient-to-r from-indigo-500 via-purple-600 to-fuchsia-600
+              hover:from-indigo-600 hover:via-purple-700 hover:to-fuchsia-700
+              hover:shadow-2xl hover:shadow-purple-700/40
+              hover:scale-[1.04]
+              text-white
+            `
+        }
+      `}
+              >
+                {/* Shine effect */}
+                {queue.length > 0 && (
+                  <span className="absolute inset-0 bg-gradient-to-r from-white/15 via-white/5 to-transparent -translate-x-full animate-shine pointer-events-none" />
+                )}
+
+                <span>Start session</span>
+
+                {queue.length > 0 ? (
+                  <span className="text-xl transition-transform group-hover:translate-x-1">
+                    🚀
+                  </span>
+                ) : (
+                  <span className="text-xl opacity-70">🔒</span>
+                )}
+              </button>
+
+              {/* Improved tooltip – only when disabled */}
+              {queue.length === 0 && (
+                <div
+                  className="
+        pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-5
+        px-5 py-3.5 text-sm bg-neutral-900/95 backdrop-blur-lg
+        border border-neutral-700/60 rounded-2xl shadow-2xl
+        opacity-0 group-hover:opacity-100 transition-opacity duration-200
+        whitespace-nowrap
+        before:content-[''] before:absolute before:top-full before:left-1/2
+        before:-translate-x-1/2 before:border-10 before:border-transparent
+        before:border-t-neutral-900/95
+      "
+                >
+                  <div className="font-semibold text-amber-300 mb-1.5">
+                    Not ready yet!
+                  </div>
+                  <div className="text-neutral-300">
+                    At least{" "}
+                    <span className="font-medium text-white">one Song</span> in
+                    the Queue
+                  </div>
+                </div>
+              )}
+            </div>
           )}
+
           <button
             onClick={() => navigate("/dashboard")}
             className="text-gray-600"
@@ -1297,7 +1359,7 @@ const SessionPage = () => {
         {sessionLive && votingPhase && timeRemaining > 0 && (
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-xl shadow-lg mb-8 text-center max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold mb-2">
-              {votingPhase.phase === "suggesting" ? (
+              {votingPhase.phase === "suggestion" ? (
                 <>Submit song suggestions</>
               ) : (
                 <>Voting is underway</>
@@ -1309,7 +1371,7 @@ const SessionPage = () => {
             <div className="bg-white/20 h-3 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-1000 ease-linear ${
-                  votingPhase.phase === "suggesting"
+                  votingPhase.phase === "suggestion"
                     ? "bg-green-400"
                     : "bg-orange-400"
                 }`}
@@ -1323,7 +1385,7 @@ const SessionPage = () => {
               />
             </div>
             <p className="mt-3 text-sm opacity-90">
-              {votingPhase.phase === "suggesting"
+              {votingPhase.phase === "suggestion"
                 ? "Submit your song now!"
                 : "Vote for your favorite!"}
             </p>
@@ -1359,9 +1421,7 @@ const SessionPage = () => {
               </button>
             </div>
             {inviteStatus === "success" && (
-              <p className="text-green-600 text-sm mt-2">
-                Invitation sent!
-              </p>
+              <p className="text-green-600 text-sm mt-2">Invitation sent!</p>
             )}
             {inviteStatus === "error" && (
               <p className="text-red-600 text-sm mt-2">
@@ -1434,7 +1494,7 @@ const SessionPage = () => {
                         setRemovingUserId(invite.id);
                         try {
                           await axios.delete(
-                            `https://api.tunevote.com/sessions/${sessionId}/invites/${invite.id}`,
+                            `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
                             { headers: getAuthHeaders() },
                           );
                           setAcceptedInvites((prev) =>
@@ -1614,9 +1674,32 @@ const SessionPage = () => {
                   </div>
                   <button
                     onClick={() => proposeSong(video)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded text-xs"
+                    disabled={
+                      sessionLive && votingPhase?.phase !== "suggestion"
+                    }
+                    className={`
+            min-w-[110px] px-5 py-2.5 rounded-full font-medium text-sm
+            transition-all duration-300 transform active:scale-95
+            focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500
+            ${
+              sessionLive && votingPhase?.phase !== "suggestion"
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
+                : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 " +
+                  "text-white shadow-lg shadow-indigo-500/30 " +
+                  "hover:shadow-xl hover:shadow-indigo-500/40 " +
+                  "hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 " +
+                  "group-hover:scale-105"
+            }
+          `}
                   >
-                    Suggest
+                    {sessionLive && votingPhase?.phase !== "suggestion" ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <span className="text-base">⏳</span>
+                        <span className="text-xs">Suggestion phase only</span>
+                      </span>
+                    ) : (
+                      "Suggest Song 🔥"
+                    )}
                   </button>
                 </div>
               ))}
@@ -1633,6 +1716,7 @@ const SessionPage = () => {
               value={pauseDuration}
               onChange={(e) => setPauseDuration(Number(e.target.value))}
               className="border rounded p-2 w-20"
+              disabled={sessionLive && votingPhase?.phase !== "suggestion"}
             />
             <span className="text-sm text-gray-600">seconds</span>
             <input
@@ -1641,12 +1725,13 @@ const SessionPage = () => {
               onChange={(e) => setPauseDescription(e.target.value)}
               className="flex-1 border rounded p-2"
               placeholder="Beschreibung (optional)"
+              disabled={sessionLive && votingPhase?.phase !== "suggestion"}
             />
             <button
               onClick={async () => {
                 try {
                   await axios.post(
-                    `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+                    `http://localhost:4000/sessions/${sessionId}/proposals`,
                     {
                       item_type: "pause",
                       duration: pauseDuration,
@@ -1660,24 +1745,52 @@ const SessionPage = () => {
                   alert("Fehler beim Hinzufügen der Pause");
                 }
               }}
-              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition"
+              disabled={sessionLive && votingPhase?.phase !== "suggestion"}
+              className={`
+    relative overflow-hidden
+    px-6 py-3 rounded-full font-semibold text-base
+    transition-all duration-300 transform active:scale-95
+    shadow-lg shadow-amber-600/30
+    focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2
+    ${
+      sessionLive && votingPhase?.phase !== "suggestion"
+        ? "bg-gray-500/60 text-gray-300 cursor-not-allowed shadow-none"
+        : `
+          bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600
+          text-white
+          hover:shadow-xl hover:shadow-amber-500/50
+          hover:scale-105
+          hover:from-amber-600 hover:via-yellow-600 hover:to-amber-700
+        `
+    }
+  `}
             >
-              Add break
+              {/* Shine animation */}
+              <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shine pointer-events-none" />
+
+              {sessionLive && votingPhase?.phase !== "suggestion"
+                ? "Only possible in the proposal phase"
+                : "Add break ⏸️"}
             </button>
           </div>
+
+          {/* Optional: kleiner Hinweis, wenn deaktiviert – macht die UX noch klarer */}
+          {sessionLive && votingPhase?.phase !== "suggestion" && (
+            <p className="text-sm text-gray-500 mt-2 italic">
+              Breaks can only be added during the proposal phase.
+            </p>
+          )}
         </div>
 
         {/* === Voting Round (Songs mit status = suggested) === */}
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <h2 className="text-xl font-semibold mb-3">
-            🗳 Vote (
-            {proposals.filter((p) => p.status === "suggested").length} / 5)
+            🗳 Vote ({proposals.filter((p) => p.status === "suggested").length}{" "}
+            / 5)
           </h2>
 
           {proposals.length === 0 ? (
-            <p className="text-gray-500">
-              No songs suggested at this time.
-            </p>
+            <p className="text-gray-500">No songs suggested at this time.</p>
           ) : (
             <div className="space-y-3">
               {proposals
@@ -1717,7 +1830,7 @@ const SessionPage = () => {
                         </p>
 
                         <p className="text-sm text-gray-600">
-                          Vorgeschlagen von{" "}
+                          Proposed by{" "}
                           <span className="font-semibold">
                             {song.itemSource === "ai" ? "🤖 KI" : song.addedBy}
                           </span>
@@ -1740,14 +1853,13 @@ const SessionPage = () => {
       }
     `}
                       >
-                        {song.userHasVoted ? "Abgestimmt" : "Abstimmen"} (
-                        {song.votes})
+                        {song.userHasVoted ? "Voted" : "Vote"} ({song.votes})
                       </button>
                     ) : (
                       <div className="text-gray-500 text-sm italic">
-                        {votingPhase?.phase === "suggesting" ? (
+                        {votingPhase?.phase === "suggestion" ? (
                           <>
-                            Vorschlagsphase – Abstimmung startet gleich!
+                            Proposal phase – Voting will begin shortly!
                             {/* Nur der Ersteller darf löschen – KI-Vorschläge ausgeschlossen */}
                             {song.itemSource !== "ai" &&
                               song.addedBy === displayName && (
@@ -1756,14 +1868,14 @@ const SessionPage = () => {
                                     removeSongFromSuggestions(song.id)
                                   }
                                   className="ml-4 px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full hover:bg-red-200 transition font-medium"
-                                  title="Dein Vorschlag – klicke zum Entfernen"
+                                  title="Your suggestion – click to remove"
                                 >
-                                  ✕ Entfernen
+                                  ✕ Remove
                                 </button>
                               )}
                           </>
                         ) : (
-                          "Warte auf nächste Runde"
+                          "Waiting for the next round"
                         )}
                       </div>
                     )}
@@ -1779,7 +1891,7 @@ const SessionPage = () => {
           </h2>
 
           {queue.length === 0 ? (
-            <p className="text-gray-500">Leer</p>
+            <p className="text-gray-500">Empty</p>
           ) : (
             queue.map((item) => {
               const isCurrent =
