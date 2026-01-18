@@ -94,7 +94,13 @@ const SessionPage = () => {
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
-    const guestToken = localStorage.getItem("guestToken");
+    let guestToken = localStorage.getItem("guestToken");
+
+    // Sicherstellen: Quotes entfernen + trimmen
+    if (guestToken) {
+      guestToken = guestToken.trim().replace(/^["']|["']$/g, "");
+      console.log("[getAuthHeaders DEBUG] Bereinigter guestToken:", guestToken);
+    }
 
     return {
       "Content-Type": "application/json",
@@ -583,35 +589,71 @@ const SessionPage = () => {
   }, []);
 
   // === KI-EMPFEHLUNGEN NUR Beim Start einer neuen Vorschlagsphase laden ===
+  // === KI-EMPFEHLUNGEN ===
+  // === KI-EMPFEHLUNGEN ===
   useEffect(() => {
-    if (!isLiveJoined || !socketRef.current) {
+    if (!isLiveJoined || !socketRef.current || !sessionLive) {
+      console.log(
+        "[KI Frontend] Nicht live beigetreten oder Socket nicht bereit",
+      );
       setRecommendations([]);
+      setRecLoading(false);
       return;
     }
 
-    const handleSuggestingPhaseStarted = async (data) => {
-      console.log(
-        "[KI] Neue Vorschlagsphase gestartet → lade Empfehlungen",
-        data,
-      );
+    // Funktion zum Laden der Empfehlungen (wiederverwendbar)
+    const loadRecommendations = async (reason = "unbekannt") => {
+      console.log(`[KI Frontend] Lade Empfehlungen wegen: ${reason}`);
+
+      const headers = getAuthHeaders();
+      console.log("[KI Frontend DEBUG] Gesendete Headers:", headers);
+
+      if (isGuest) {
+        const rawToken = localStorage.getItem("guestToken");
+        const cleanToken = rawToken?.trim().replace(/^["']|["']$/g, "") || "";
+        console.log(
+          "[KI Frontend DEBUG] Guest-Token raw:",
+          JSON.stringify(rawToken),
+          "| cleaned:",
+          cleanToken,
+          "| Länge:",
+          cleanToken.length, // sollte 36 sein!
+        );
+      }
 
       setRecLoading(true);
       try {
-        console.log("[KI] Lade Empfehlungen vom Server...");
         const res = await axios.get(
           `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
-          { headers: getAuthHeaders() },
+          { headers },
         );
+        console.log("[KI Frontend] Erfolg – Anzahl:", res.data?.length || 0);
         setRecommendations(res.data || []);
       } catch (e) {
-        console.warn("KI-Empfehlungen konnten nicht geladen werden", e);
+        console.error(
+          "[KI Frontend] Fehler:",
+          e.response?.status,
+          e.response?.data || e.message,
+        );
         setRecommendations([]);
       } finally {
         setRecLoading(false);
       }
     };
 
-    // Event anhängen
+    // 1. Sofort laden (Safety-Net für Guests)
+    loadRecommendations("initial / useEffect-Trigger");
+
+    // 2. Bei jedem neuen Start einer Suggestion-Phase laden
+    const handleSuggestingPhaseStarted = (data) => {
+      console.log(
+        "[KI Frontend] Event: suggesting_phase_started (Round " +
+          (data?.roundId || "unbekannt") +
+          ") → lade Empfehlungen",
+      );
+      loadRecommendations("suggesting_phase_started Event");
+    };
+
     socketRef.current.on(
       "suggesting_phase_started",
       handleSuggestingPhaseStarted,
@@ -624,7 +666,7 @@ const SessionPage = () => {
         handleSuggestingPhaseStarted,
       );
     };
-  }, [isLiveJoined, sessionId, socketRef.current]);
+  }, [isLiveJoined, sessionLive, sessionId, socketRef.current]);
 
   function extractYouTubeId(url) {
     try {
@@ -950,8 +992,7 @@ const SessionPage = () => {
 
   // === Start Session (Host) ===
   const startSession = async () => {
-    if (!isHost) return;
-
+    // Player stoppen, falls vorhanden
     if (playerRef.current) {
       playerRef.current.stopVideo();
       playerRef.current.destroy();
@@ -959,11 +1000,7 @@ const SessionPage = () => {
     }
 
     try {
-      await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/start`,
-        {},
-        { headers: getAuthHeaders() },
-      );
+      await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`);
       loadSessionData();
     } catch (err) {
       console.error("Start session failed", err);
@@ -1150,7 +1187,7 @@ const SessionPage = () => {
                 setIsEditingName(true);
               }}
               className="text-blue-600 hover:text-blue-800 transition opacity-70 hover:opacity-100"
-              title="Session-Namen bearbeiten"
+              title="Edit session names"
             >
               <PencilSquareIcon className="w-6 h-6" />
             </button>
@@ -1640,7 +1677,7 @@ const SessionPage = () => {
               className={`px-3 py-1 rounded flex items-center gap-1 ${isMutedForMe ? "bg-red-600 text-white" : "bg-gray-200"}`}
             >
               {isMutedForMe ? <FaVolumeMute /> : <FaVolumeUp />}
-              {isMutedForMe ? "Stumm" : "Ton"}
+              {isMutedForMe ? "Mute" : "Sound"}
             </button>
           </div>
         )}
