@@ -12,6 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
+    "@jofr/capacitor-media-session": "^4.0.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.3",
     "chart.js": "^4.5.1",
