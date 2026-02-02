@@ -13,6 +13,7 @@ import InviteRedirect from "./pages/InviteRedirect";
 import Profile from "./pages/Profile";
 import ArtistDetail from "./pages/ArtistDetail";
 import UserDetail from "./pages/UserDetail";
+import GoogleCallback from "./components/GoogleCallback";   // oder wo du sie abgelegt hast
 
 
 // 🔐 Nur für geschützte Bereiche (Dashboard usw.)
@@ -55,6 +56,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         {/* 🏠 Home */}
         <Route path="/" element={<HomeRedirect />} />
 
+        {/* Google OAuth Callback – öffentlich, kein Auth-Check */}
+        <Route path="/auth/google/callback" element={<GoogleCallback />} />
+
+        {/* ← HIER NEU */}
+        <Route path="/google-callback" element={<GoogleCallback />} />
 
         {/* 🔐 Auth-only für Gäste */}
         <Route
