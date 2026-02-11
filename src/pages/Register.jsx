@@ -12,7 +12,6 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // 🧹 Wird beim Betreten der Login-Seite ausgeführt
   useEffect(() => {
     localStorage.clear();
   }, []);
@@ -24,7 +23,7 @@ export default function Register() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("https://api.tunevote.com/register", {
+      const res = await axios.post("http://localhost:4000/register", {
         username,
         email,
         password,
@@ -38,8 +37,7 @@ export default function Register() {
 
       setTimeout(() => {
         window.location.href = "/login";
-      }, 1500); // etwas länger, damit man die Success-Message sieht
-
+      }, 1500);
     } catch (err) {
       setMessage(err.response?.data?.error || "Server error");
       setSuccess(false);
@@ -49,7 +47,12 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "https://api.tunevote.com/auth/google";
+    window.location.href = "http://localhost:4000/auth/google";
+  };
+
+  const handleFacebookLogin = () => {
+    window.location.href = "http://localhost:4000/auth/facebook";
+    // ↑ Passe die Route an, falls dein Backend eine andere URL verwendet
   };
 
   return (
@@ -139,8 +142,25 @@ export default function Register() {
           <p className="text-gray-300 mt-2">Join the music sync revolution</p>
         </div>
 
-        {/* Google Button + Divider – jetzt OBEN, genau wie beim Login */}
-        <div className="mb-6">
+        {/* ── Social Login Buttons (Facebook + Google) ── */}
+        <div className="space-y-4 mb-6">
+          <motion.button
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            onClick={handleFacebookLogin}
+            type="button"
+            className="w-full py-4 px-5 rounded-2xl bg-white/10 border border-white/30 text-white font-medium text-lg flex items-center justify-center gap-3 hover:bg-white/15 hover:border-white/40 hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300 backdrop-blur-md"
+          >
+            <svg className="w-6 h-6" viewBox="0 0 24 24">
+              <path
+                fill="#1877F2"
+                d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.49 0-1.955.925-1.955 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 22.954 24 17.99 24 12z"
+              />
+            </svg>
+            <span>Continue with Facebook</span>
+          </motion.button>
+
           <motion.button
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -170,7 +190,7 @@ export default function Register() {
             <span>Continue with Google</span>
           </motion.button>
 
-          <div className="relative mt-6 mb-6">
+          <div className="relative mt-2 mb-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-white/20" />
             </div>
