@@ -14,7 +14,7 @@ import Profile from "./pages/Profile";
 import ArtistDetail from "./pages/ArtistDetail";
 import UserDetail from "./pages/UserDetail";
 import GoogleCallback from "./components/GoogleCallback";   // oder wo du sie abgelegt hast
-
+import FacebookCallback from "./components/FacebookCallback";
 
 // 🔐 Nur für geschützte Bereiche (Dashboard usw.)
 const RequireAuth = ({ children }) => {
@@ -61,6 +61,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
 
         {/* ← HIER NEU */}
         <Route path="/google-callback" element={<GoogleCallback />} />
+
+
+        {/* Facebook OAuth Callback – öffentlich, kein Auth-Check */}
+        <Route path="/auth/facebook/callback" element={<FacebookCallback />} />
+
+        <Route path="/facebook-callback" element={<FacebookCallback />} />
 
         {/* 🔐 Auth-only für Gäste */}
         <Route
