@@ -2,10 +2,9 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Mail, Lock, Music, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
+import { Mail, Lock, Music, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
 
 export default function Register() {
-  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -24,14 +23,12 @@ export default function Register() {
 
     try {
       const res = await axios.post("http://localhost:4000/register", {
-        username,
         email,
         password,
       });
 
       setMessage(res.data.message);
       setSuccess(true);
-      setUsername("");
       setEmail("");
       setPassword("");
 
@@ -52,12 +49,11 @@ export default function Register() {
 
   const handleFacebookLogin = () => {
     window.location.href = "http://localhost:4000/auth/facebook";
-    // ↑ Passe die Route an, falls dein Backend eine andere URL verwendet
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 overflow-hidden relative flex items-center justify-center p-4">
-      {/* Animated Background Orbs – unverändert */}
+      {/* Animated Background Orbs */}
       <div className="fixed inset-0 pointer-events-none">
         <motion.div
           animate={{
@@ -97,7 +93,7 @@ export default function Register() {
         />
       </div>
 
-      {/* Floating Particles – unverändert */}
+      {/* Floating Particles */}
       {[...Array(8)].map((_, i) => (
         <motion.div
           key={i}
@@ -142,7 +138,7 @@ export default function Register() {
           <p className="text-gray-300 mt-2">Join the music sync revolution</p>
         </div>
 
-        {/* ── Social Login Buttons (Facebook + Google) ── */}
+        {/* Social Login Buttons */}
         <div className="space-y-4 mb-6">
           <motion.button
             initial={{ y: 20, opacity: 0 }}
@@ -202,33 +198,13 @@ export default function Register() {
           </div>
         </div>
 
-        {/* Form – jetzt darunter */}
+        {/* Form – ohne Username */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Username */}
-          <motion.div
-            initial={{ x: -60, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-200 mb-2">
-              <User className="w-4 h-4" />
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-5 py-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all duration-300"
-              placeholder="yourusername"
-              required
-            />
-          </motion.div>
-
           {/* Email */}
           <motion.div
             initial={{ x: 60, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.45 }}
+            transition={{ delay: 0.4 }}
           >
             <label className="flex items-center gap-2 text-sm font-medium text-gray-200 mb-2">
               <Mail className="w-4 h-4" />
@@ -248,7 +224,7 @@ export default function Register() {
           <motion.div
             initial={{ x: -60, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.5 }}
+            transition={{ delay: 0.45 }}
           >
             <label className="flex items-center gap-2 text-sm font-medium text-gray-200 mb-2">
               <Lock className="w-4 h-4" />
@@ -287,7 +263,7 @@ export default function Register() {
           <motion.div
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.55 }}
+            transition={{ delay: 0.5 }}
           >
             <button
               type="submit"
@@ -314,7 +290,7 @@ export default function Register() {
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.65 }}
+          transition={{ delay: 0.6 }}
           className="mt-8 text-center text-gray-300"
         >
           Already have an account?{" "}
