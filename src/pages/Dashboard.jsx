@@ -7,6 +7,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Transition } from "@headlessui/react";
 import { io } from "socket.io-client";
 import {
+  trackEvent,
+  trackPageView,
+  createScrollTracker,
+  createTimeTracker,
+} from "../utils/analytics";
+import {
   Plus,
   LogOut,
   Copy,
@@ -232,6 +238,22 @@ export default function Dashboard() {
     }
   }, [isLoggedIn]);
 
+  // === Analytics: page view, scroll depth, time on page ===
+  useEffect(() => {
+    trackPageView("/dashboard", "Dashboard");
+    trackEvent("dashboard_viewed", {
+      user_type: isGuest ? "guest" : "registered",
+    });
+
+    const cleanupScroll = createScrollTracker("dashboard");
+    const sendTime = createTimeTracker("dashboard");
+
+    return () => {
+      cleanupScroll();
+      sendTime();
+    };
+  }, []);
+
   // === Logout ===
   const handleLogout = () => {
     localStorage.clear();
@@ -259,8 +281,13 @@ export default function Dashboard() {
       setSessions((prev) => [res.data, ...prev]);
       setNewSessionTitle("");
       setShowCreateSession(false);
+      trackEvent("session_created", {
+        session_id: res.data.id,
+        is_private: isPrivate,
+      });
     } catch (err) {
       alert("Fehler beim Erstellen der Session");
+      trackEvent("session_create_failed");
     } finally {
       setLoading(false);
     }
@@ -274,6 +301,7 @@ export default function Dashboard() {
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setShowDeleteModal(null);
+      trackEvent("session_deleted", { session_id: sessionId });
     } catch (err) {
       alert("Fehler beim Löschen");
     }
@@ -285,10 +313,15 @@ export default function Dashboard() {
     navigator.clipboard.writeText(link);
     setCopiedId(sessionId);
     setTimeout(() => setCopiedId(null), 2000);
+    trackEvent("session_link_copied", { session_id: sessionId });
   };
 
   // === Session öffnen ===
   const openSession = (session) => {
+    trackEvent("session_opened_from_dashboard", {
+      session_id: session.id,
+      session_title: session.title,
+    });
     navigate(`/session/${session.id}`);
   };
 
@@ -454,7 +487,10 @@ export default function Dashboard() {
           {/* Create Session Button */}
           {isLoggedIn && (
             <button
-              onClick={() => setShowCreateSession(!showCreateSession)}
+              onClick={() => {
+                if (!showCreateSession) trackEvent("create_session_form_opened");
+                setShowCreateSession(!showCreateSession);
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all ${
                 showCreateSession
                   ? "bg-purple-500 text-white"
