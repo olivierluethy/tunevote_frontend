@@ -7,6 +7,13 @@ import { FaPlay, FaPause, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 import unidecode from "unidecode";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  trackEvent,
+  trackPageView,
+  createIdleTracker,
+  createScrollTracker,
+  createTimeTracker,
+} from "../utils/analytics";
+import {
   ArrowLeft,
   Play,
   Pause,
@@ -127,10 +134,15 @@ const SessionPage = () => {
   const totalSongsInSession = queue.length;
 
   const handlePasteLink = async () => {
+    trackEvent("paste_link_attempted", { session_id: sessionId });
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
         setSearchQuery(text);
+        trackEvent("paste_link_success", {
+          session_id: sessionId,
+          is_youtube_url: /youtu\.?be/.test(text),
+        });
       }
     } catch (err) {
       console.error("Clipboard access failed:", err);
@@ -220,6 +232,7 @@ const SessionPage = () => {
 
       await loadProposals();
       await loadSessionData();
+      trackEvent("song_removed", { session_id: sessionId, proposal_id: proposalId });
     } catch (err) {
       console.error("Error removing proposal:", err);
       alert(
@@ -250,6 +263,7 @@ const SessionPage = () => {
       );
       await loadProposals();
       await loadSessionData();
+      trackEvent("song_voted", { session_id: sessionId, song_id: songId });
     } catch (err) {
       console.error("Voting error:", err);
       alert("Error voting");
@@ -273,10 +287,12 @@ const SessionPage = () => {
       setInviteEmail("");
       setTimeout(() => setInviteStatus(""), 3000);
       await loadSessionData();
+      trackEvent("invite_sent", { session_id: sessionId });
     } catch (err) {
       console.error("Invite failed:", err);
       setInviteStatus("error");
       setTimeout(() => setInviteStatus(""), 4000);
+      trackEvent("invite_failed", { session_id: sessionId });
     }
   };
 
@@ -452,6 +468,31 @@ const SessionPage = () => {
       setShowGuestModal(true);
     }
   }, [loadSessionData, loadProposals, token, guestToken]);
+
+  // === Analytics: page view, idle detection, scroll, time on page ===
+  useEffect(() => {
+    trackPageView(`/session/${sessionId}`, "Session Page");
+    trackEvent("session_page_viewed", {
+      session_id: sessionId,
+      user_type: isGuest ? "guest" : isLoggedIn ? "registered" : "anonymous",
+    });
+
+    const idle = createIdleTracker("session_page", sessionId, 30000);
+    const cleanupScroll = createScrollTracker("session_page");
+    const sendTime = createTimeTracker("session_page");
+
+    const resetIdle = () => idle.reset();
+    window.addEventListener("click", resetIdle, { passive: true });
+    window.addEventListener("keydown", resetIdle, { passive: true });
+
+    return () => {
+      idle.cleanup();
+      cleanupScroll();
+      sendTime();
+      window.removeEventListener("click", resetIdle);
+      window.removeEventListener("keydown", resetIdle);
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     if (!token && !guestToken) return;
@@ -658,6 +699,10 @@ const SessionPage = () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 
     searchDebounceRef.current = setTimeout(async () => {
+      trackEvent("song_search_started", {
+        session_id: sessionId,
+        query_type: extractYouTubeId(query) ? "youtube_link" : "text_search",
+      });
       const normQuery = normalize(query);
       const youtubeId = extractYouTubeId(query);
 
@@ -834,6 +879,7 @@ const SessionPage = () => {
 
   const joinLive = async () => {
     if (!sessionLive || isLiveJoined) return;
+    trackEvent("join_live_clicked", { session_id: sessionId });
     setIsLiveJoined(true);
     loadLiveParticipants();
 
@@ -918,9 +964,11 @@ const SessionPage = () => {
     try {
       await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`);
       loadSessionData();
+      trackEvent("session_started", { session_id: sessionId });
     } catch (err) {
       console.error("Start session failed", err);
       alert("Error starting session");
+      trackEvent("session_start_failed", { session_id: sessionId });
     }
   };
 
@@ -1007,6 +1055,11 @@ const SessionPage = () => {
       setAiSuggestions([]);
       await loadProposals();
       await loadSessionData();
+      trackEvent("song_added", {
+        session_id: sessionId,
+        video_id: videoId,
+        song_title: title,
+      });
     } catch (err) {
       console.error(err);
       const msg =
@@ -1014,6 +1067,10 @@ const SessionPage = () => {
           ? "🚫 Maximum 5 songs per voting round."
           : "Error suggesting: " + (err.response?.data?.message || "Unknown error");
       alert(msg);
+      trackEvent("song_add_failed", {
+        session_id: sessionId,
+        error: err.response?.data?.message || "unknown",
+      });
     }
   };
 
@@ -1029,6 +1086,7 @@ const SessionPage = () => {
 
       setShowGuestModal(false);
       await loadSessionData();
+      trackEvent("guest_joined_session", { session_id: sessionId });
     } catch (err) {
       console.error(err);
       alert("Error joining as guest");
@@ -1038,6 +1096,10 @@ const SessionPage = () => {
   const handleShare = async () => {
     const url = window.location.href;
     const title = `Join ${session?.title || "TuneVote Session"}`;
+    trackEvent("session_shared", {
+      session_id: sessionId,
+      share_method: navigator.share ? "native_share" : "clipboard",
+    });
 
     if (navigator.share) {
       try {
@@ -1403,7 +1465,10 @@ const SessionPage = () => {
         {/* Search Section - Collapsible */}
         <div className="px-4 py-3">
           <button
-            onClick={() => setShowSearch(!showSearch)}
+            onClick={() => {
+              if (!showSearch) trackEvent("search_section_opened", { session_id: sessionId });
+              setShowSearch(!showSearch);
+            }}
             className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.07] transition-colors"
           >
             <span className="flex items-center gap-2 font-medium">
@@ -1624,7 +1689,10 @@ const SessionPage = () => {
         {session?.is_private === 1 && (
           <div className="px-4 py-3">
             <button
-              onClick={() => setShowParticipants(!showParticipants)}
+              onClick={() => {
+                if (!showParticipants) trackEvent("participants_section_opened", { session_id: sessionId });
+                setShowParticipants(!showParticipants);
+              }}
               className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.07] transition-colors"
             >
               <span className="flex items-center gap-2 font-medium">
