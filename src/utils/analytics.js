@@ -26,6 +26,70 @@ export function trackPageView(pagePath, pageTitle) {
   } catch (e) {}
 }
 
+// --- Diagnostic timing helpers -------------------------------------------
+// Lets us compute durations (`time_since_search_ms`, `time_since_session_start_ms`,
+// first-song-added delta, response_time_ms) without threading refs through
+// many components. Keys are arbitrary strings; callers own the namespace.
+const _timings = new Map();
+
+export function markTime(key) {
+  _timings.set(key, performance.now());
+}
+
+export function msSince(key) {
+  const t = _timings.get(key);
+  if (t == null) return null;
+  return Math.round(performance.now() - t);
+}
+
+export function clearTime(key) {
+  _timings.delete(key);
+}
+
+// --- Once-per-key dedupe -------------------------------------------------
+// For lifecycle events that MUST NOT fire twice in a single session
+// (e.g. `session_initialized`, `session_empty_state_seen`, `guest_modal_shown`).
+// Callers pass a dedupeKey — typically scoped by sessionId so navigating
+// to a different session re-enables the event.
+const _firedOnce = new Set();
+
+export function trackOnce(eventName, params = {}, dedupeKey) {
+  const k = dedupeKey || eventName;
+  if (_firedOnce.has(k)) return;
+  _firedOnce.add(k);
+  trackEvent(eventName, params);
+}
+
+export function resetTrackOnce(dedupeKey) {
+  _firedOnce.delete(dedupeKey);
+}
+
+// --- YouTube API error classifier ----------------------------------------
+// Maps axios errors to a small, dashboard-friendly enum so we can tell
+// quota exhaustion apart from a bad key or a network blip. This is what
+// makes the "did the API fail or did the user get zero results?" question
+// answerable in GA.
+export function classifyYouTubeError(err) {
+  if (!err) return "unknown";
+  if (err.code === "ECONNABORTED") return "timeout";
+  if (!err.response) return "network_error";
+  const status = err.response.status;
+  const reason =
+    err.response.data?.error?.errors?.[0]?.reason ||
+    err.response.data?.error?.status ||
+    "";
+  if (status === 403 && /quota|dailyLimitExceeded|rateLimitExceeded/i.test(reason)) {
+    return "quota_exceeded";
+  }
+  if (status === 400) return "invalid_key";
+  if (status === 401) return "unauthorized";
+  if (status === 403) return "forbidden";
+  if (status === 404) return "not_found";
+  if (status === 429) return "rate_limit";
+  if (status >= 500) return "server_error";
+  return "api_error";
+}
+
 // Idle / inactivity tracker for a component.
 // Returns { reset, cleanup } — call reset() on any user interaction,
 // and cleanup() on unmount.
