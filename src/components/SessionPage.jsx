@@ -9,6 +9,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   trackEvent,
   trackPageView,
+  trackOnce,
+  markTime,
+  msSince,
+  classifyYouTubeError,
   createIdleTracker,
   createScrollTracker,
   createTimeTracker,
@@ -133,19 +137,51 @@ const SessionPage = () => {
   const suggestedSongs = proposals.filter((p) => p.status === "suggested");
   const totalSongsInSession = queue.length;
 
+  // Paste flow: this is the fallback when search fails. We track it in
+  // three phases so we can tell "clicked paste" from "got text" from
+  // "text was actually usable as a YouTube link".
   const handlePasteLink = async () => {
-    trackEvent("paste_link_attempted", { session_id: sessionId });
+    trackEvent("paste_attempted", { session_id: sessionId });
+
+    let text;
     try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        setSearchQuery(text);
-        trackEvent("paste_link_success", {
-          session_id: sessionId,
-          is_youtube_url: /youtu\.?be/.test(text),
-        });
-      }
+      text = await navigator.clipboard.readText();
     } catch (err) {
+      // User denied clipboard, non-HTTPS, sandboxed iframe, Safari private mode.
+      // Previously this failed silently — now we can see it in GA.
       console.error("Clipboard access failed:", err);
+      trackEvent("paste_failed", {
+        session_id: sessionId,
+        reason: "permission_denied",
+      });
+      return;
+    }
+
+    if (!text) {
+      trackEvent("paste_failed", {
+        session_id: sessionId,
+        reason: "parse_error",
+      });
+      return;
+    }
+
+    // Always populate the input so pasting a plain song title still helps.
+    setSearchQuery(text);
+
+    const isYouTubeUrl = /youtu\.?be/.test(text);
+    if (isYouTubeUrl) {
+      trackEvent("paste_success", {
+        session_id: sessionId,
+        is_youtube_url: true,
+      });
+    } else {
+      // Not a YouTube link — we still accept it as a text query, but
+      // record it as a paste failure so we can distinguish real URL pastes
+      // from "user pasted the song title".
+      trackEvent("paste_failed", {
+        session_id: sessionId,
+        reason: "invalid_url",
+      });
     }
   };
 
@@ -471,10 +507,14 @@ const SessionPage = () => {
 
   // === Analytics: page view, idle detection, scroll, time on page ===
   useEffect(() => {
+    // Timestamp baseline so song_added can report time_since_session_start_ms
+    // — critical for time-to-first-value analysis.
+    markTime(`session_page_${sessionId}`);
     trackPageView(`/session/${sessionId}`, "Session Page");
     trackEvent("session_page_viewed", {
       session_id: sessionId,
       user_type: isGuest ? "guest" : isLoggedIn ? "registered" : "anonymous",
+      timestamp: Date.now(),
     });
 
     const idle = createIdleTracker("session_page", sessionId, 30000);
@@ -689,6 +729,52 @@ const SessionPage = () => {
     return () => clearInterval(interval);
   }, [loadCache]);
 
+  // Fires once per sessionId, as soon as the session payload finished loading.
+  // Distinguishes "user landed on URL" (session_page_viewed) from
+  // "session actually became usable" (session_initialized).
+  useEffect(() => {
+    if (!session) return;
+    trackOnce(
+      "session_initialized",
+      {
+        session_id: sessionId,
+        user_type: isGuest ? "guest" : isLoggedIn ? "registered" : "anonymous",
+        timestamp: Date.now(),
+      },
+      `session_initialized_${sessionId}`
+    );
+  }, [session, sessionId, isGuest, isLoggedIn]);
+
+  // Fires once per sessionId, the first time the user sees a session with
+  // no queued songs AND no proposals. This is the empty-state moment —
+  // the exact point where drop-off happens today.
+  useEffect(() => {
+    if (!session) return;
+    if (queue.length === 0 && proposals.length === 0) {
+      trackOnce(
+        "session_empty_state_seen",
+        {
+          session_id: sessionId,
+          user_type: isGuest ? "guest" : isLoggedIn ? "registered" : "anonymous",
+          timestamp: Date.now(),
+        },
+        `session_empty_state_seen_${sessionId}`
+      );
+    }
+  }, [session, queue, proposals, sessionId, isGuest, isLoggedIn]);
+
+  // Guest modal visibility is a drop-off hotspot. Fire shown/dismissed
+  // so we can measure conversion through the guest auth wall.
+  useEffect(() => {
+    if (showGuestModal) {
+      trackOnce(
+        "guest_modal_shown",
+        { session_id: sessionId },
+        `guest_modal_shown_${sessionId}`
+      );
+    }
+  }, [showGuestModal, sessionId]);
+
   useEffect(() => {
     const query = searchQuery.trim();
     if (!query) {
@@ -699,14 +785,26 @@ const SessionPage = () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 
     searchDebounceRef.current = setTimeout(async () => {
-      trackEvent("song_search_started", {
-        session_id: sessionId,
-        query_type: extractYouTubeId(query) ? "youtube_link" : "text_search",
-      });
-      const normQuery = normalize(query);
       const youtubeId = extractYouTubeId(query);
+      const isUrl = !!youtubeId;
+
+      // Mark search start so `song_added` can compute time_since_search_ms.
+      markTime(`search_${sessionId}`);
+
+      // `search_performed` is the moment the system actually executes the
+      // query. It's what separates "user opened the panel / focused the
+      // input / typed one character" from "user ran a real search".
+      trackEvent("search_performed", {
+        session_id: sessionId,
+        query_length: query.length,
+        is_url: isUrl,
+      });
+
+      const normQuery = normalize(query);
 
       if (youtubeId) {
+        // Direct URL path — single-result fetch from our backend.
+        const started = performance.now();
         try {
           const res = await axios.get(
             `https://api.tunevote.com/youtube-info/${youtubeId}`
@@ -729,88 +827,168 @@ const SessionPage = () => {
           };
 
           setSearchResults([result]);
+          trackEvent("search_results_returned", {
+            session_id: sessionId,
+            result_count: 1,
+            source: "paste_url",
+            response_time_ms: Math.round(performance.now() - started),
+          });
           return;
         } catch (err) {
           console.error("YTDL fetch failed", err);
           setSearchResults([]);
+          trackEvent("search_error", {
+            session_id: sessionId,
+            source: "paste_url",
+            error_type: classifyYouTubeError(err),
+          });
+          // From the user's POV a URL that 404s is also zero-results —
+          // mirror the text-search path so both flows feed the same funnel.
+          trackEvent("search_no_results", {
+            session_id: sessionId,
+            query_length: query.length,
+            is_url: true,
+            source: "paste_url",
+          });
+          return;
         }
-      } else {
-        const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
+      }
 
-        try {
-          const matches = videoCache
-            .map((item) => {
-              const normalizedCacheTitle = normalize(item.title_norm);
-              const ratio = levenshteinRatio(normalizedCacheTitle, normQuery);
-              const includes = normalizedCacheTitle.includes(normQuery);
-              return { ...item, ratio, includes };
-            })
-            .filter((item) => item.ratio > 85 || item.includes)
-            .sort((a, b) => b.ratio - a.ratio)
-            .slice(0, 5);
+      // Text-search path — cache first, then YouTube API fallback.
+      const API_KEY = import.meta.env.VITE_YOUTUBE_KEY;
+      let source = "cache";
+      let results = [];
+      const started = performance.now();
 
-          let results = [];
+      try {
+        const matches = videoCache
+          .map((item) => {
+            const normalizedCacheTitle = normalize(item.title_norm);
+            const ratio = levenshteinRatio(normalizedCacheTitle, normQuery);
+            const includes = normalizedCacheTitle.includes(normQuery);
+            return { ...item, ratio, includes };
+          })
+          .filter((item) => item.ratio > 85 || item.includes)
+          .sort((a, b) => b.ratio - a.ratio)
+          .slice(0, 5);
 
-          if (matches.length > 0) {
-            results = matches.map((m) => ({
-              id: { videoId: m.youtubeId },
-              snippet: {
-                title: m.title,
-                thumbnails: { default: { url: m.thumbnail } },
+        if (matches.length > 0) {
+          source = "cache";
+          results = matches.map((m) => ({
+            id: { videoId: m.youtubeId },
+            snippet: {
+              title: m.title,
+              thumbnails: { default: { url: m.thumbnail } },
+            },
+          }));
+        } else if (API_KEY) {
+          source = "youtube";
+          const res = await axios.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            {
+              params: {
+                part: "snippet",
+                type: "video",
+                maxResults: 5,
+                q: query,
+                key: API_KEY,
               },
-            }));
-          } else if (API_KEY) {
-            const res = await axios.get(
-              "https://www.googleapis.com/youtube/v3/search",
-              {
-                params: {
-                  part: "snippet",
-                  type: "video",
-                  maxResults: 5,
-                  q: query,
-                  key: API_KEY,
-                },
-              }
-            );
-            results = res.data.items || [];
+            }
+          );
+          results = res.data.items || [];
 
-            for (const item of results) {
-              const youtubeId = item.id.videoId;
-              const title = item.snippet.title;
-              const thumbnail =
-                item.snippet.thumbnails.medium?.url ||
-                `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
-              const norm = normalize(title);
+          for (const item of results) {
+            const ytId = item.id.videoId;
+            const title = item.snippet.title;
+            const thumbnail =
+              item.snippet.thumbnails.medium?.url ||
+              `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
+            const norm = normalize(title);
 
+            try {
               await axios.post(
                 "https://api.tunevote.com/youtube-cache",
-                { title_norm: norm, title, youtube_id: youtubeId, thumbnail },
+                { title_norm: norm, title, youtube_id: ytId, thumbnail },
                 { headers: getAuthHeaders() }
               );
-            }
-            await loadCache();
-          }
-
-          setSearchResults(results);
-
-          if (sessionLive && isLiveJoined) {
-            setAiLoading(true);
-            try {
-              const res = await axios.post(
-                `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
-                { query },
-                { headers: getAuthHeaders() }
-              );
-              setAiSuggestions(res.data || []);
-            } catch (err) {
-              console.warn("AI suggestion failed", err);
-            } finally {
-              setAiLoading(false);
+            } catch (cacheErr) {
+              // Cache population is a best-effort write; user still sees results.
+              console.warn("[Cache] Save failed", cacheErr);
             }
           }
-        } catch (err) {
-          console.error("[Search Error]", err);
+          await loadCache();
+        } else {
+          // Cache had zero hits AND no API key is configured. This is a hard
+          // diagnostic — the system literally cannot serve text results.
+          // Surface it as `search_error` so ops can catch misconfigured envs.
+          source = "youtube";
+          trackEvent("search_error", {
+            session_id: sessionId,
+            source: "youtube",
+            error_type: "invalid_key",
+          });
         }
+
+        setSearchResults(results);
+
+        trackEvent("search_results_returned", {
+          session_id: sessionId,
+          result_count: results.length,
+          source,
+          response_time_ms: Math.round(performance.now() - started),
+        });
+
+        if (results.length === 0) {
+          // The single most important event in this file — it's how we
+          // tell "user searched but got nothing" apart from "user never
+          // searched". Drives the empty-state UX and ranking work.
+          trackEvent("search_no_results", {
+            session_id: sessionId,
+            query_length: query.length,
+            is_url: false,
+            source,
+          });
+        }
+
+        if (sessionLive && isLiveJoined) {
+          setAiLoading(true);
+          try {
+            const aiRes = await axios.post(
+              `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+              { query },
+              { headers: getAuthHeaders() }
+            );
+            setAiSuggestions(aiRes.data || []);
+          } catch (err) {
+            console.warn("AI suggestion failed", err);
+            setAiSuggestions([]);
+          } finally {
+            setAiLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error("[Search Error]", err);
+        trackEvent("search_error", {
+          session_id: sessionId,
+          source,
+          error_type: classifyYouTubeError(err),
+        });
+        // Still emit results_returned + no_results so the funnel denominator
+        // stays consistent: every search_performed has exactly one terminal
+        // event (results_returned), and zero-result branches also emit no_results.
+        trackEvent("search_results_returned", {
+          session_id: sessionId,
+          result_count: 0,
+          source,
+          response_time_ms: Math.round(performance.now() - started),
+        });
+        trackEvent("search_no_results", {
+          session_id: sessionId,
+          query_length: query.length,
+          is_url: false,
+          source,
+        });
+        setSearchResults([]);
       }
     }, 300);
   }, [searchQuery, videoCache, sessionLive, isLiveJoined, sessionId, loadCache]);
@@ -1029,7 +1207,12 @@ const SessionPage = () => {
     );
   };
 
-  const proposeSong = async (video) => {
+  // `meta.source` is one of: "search" | "paste" | "suggestion" | "recommendation".
+  // `meta.position` is the index of the clicked result (for search/suggestion lists).
+  // Both are used to attribute conversions back to the surface that drove them.
+  const proposeSong = async (video, meta = {}) => {
+    const source = meta.source || "search";
+    const position = meta.position;
     try {
       const videoId = video.id?.videoId || video.youtubeId;
       const title = video.snippet?.title || video.title;
@@ -1055,10 +1238,17 @@ const SessionPage = () => {
       setAiSuggestions([]);
       await loadProposals();
       await loadSessionData();
+      // The conversion event. Includes durations so we can analyse:
+      //   - time_since_search_ms: how long between typing and converting
+      //   - time_since_session_start_ms: time-to-first-value
       trackEvent("song_added", {
         session_id: sessionId,
         video_id: videoId,
         song_title: title,
+        source,
+        position,
+        time_since_search_ms: msSince(`search_${sessionId}`),
+        time_since_session_start_ms: msSince(`session_page_${sessionId}`),
       });
     } catch (err) {
       console.error(err);
@@ -1070,6 +1260,7 @@ const SessionPage = () => {
       trackEvent("song_add_failed", {
         session_id: sessionId,
         error: err.response?.data?.message || "unknown",
+        source,
       });
     }
   };
@@ -1087,6 +1278,11 @@ const SessionPage = () => {
       setShowGuestModal(false);
       await loadSessionData();
       trackEvent("guest_joined_session", { session_id: sessionId });
+      // Pair with guest_modal_shown so we can compute the guest-wall conversion.
+      trackEvent("guest_modal_dismissed", {
+        session_id: sessionId,
+        reason: "joined",
+      });
     } catch (err) {
       console.error(err);
       alert("Error joining as guest");
@@ -1466,7 +1662,9 @@ const SessionPage = () => {
         <div className="px-4 py-3">
           <button
             onClick={() => {
-              if (!showSearch) trackEvent("search_section_opened", { session_id: sessionId });
+              // Fires only on open (not close) so the ratio
+              // search_opened / session_page_viewed is a clean discovery metric.
+              if (!showSearch) trackEvent("search_opened", { session_id: sessionId });
               setShowSearch(!showSearch);
             }}
             className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.07] transition-colors"
@@ -1498,7 +1696,24 @@ const SessionPage = () => {
                       placeholder="Search songs or paste YouTube link..."
                       className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/30 focus:border-purple-400 focus:outline-none"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() =>
+                        // Fires each time the input gains focus — indicates
+                        // real search intent (not just the panel being open).
+                        trackEvent("search_input_focused", {
+                          session_id: sessionId,
+                        })
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSearchQuery(value);
+                        // Fires on every keystroke. We log only length (not
+                        // the query itself) to stay privacy-light; the query
+                        // is logged once later on `search_performed`.
+                        trackEvent("search_query_changed", {
+                          session_id: sessionId,
+                          query_length: value.length,
+                        });
+                      }}
                     />
                     <button
                       onClick={handlePasteLink}
@@ -1510,7 +1725,7 @@ const SessionPage = () => {
 
                   {searchResults.length > 0 && (
                     <div className="space-y-2 max-h-60 overflow-y-auto rounded-xl">
-                      {searchResults.map((video) => (
+                      {searchResults.map((video, idx) => (
                         <div
                           key={video.id.videoId}
                           className="flex items-center gap-3 p-2 rounded-xl bg-white/5 hover:bg-white/[0.07] transition-colors"
@@ -1524,7 +1739,21 @@ const SessionPage = () => {
                             {video.snippet.title}
                           </p>
                           <button
-                            onClick={() => proposeSong(video)}
+                            onClick={() => {
+                              // Pre-conversion click event. Separates "saw a
+                              // result" from "added a song" — if click >> added,
+                              // the add-button or voting-phase gate is the blocker.
+                              trackEvent("search_result_clicked", {
+                                session_id: sessionId,
+                                position: idx,
+                                total_results: searchResults.length,
+                                video_id: video.id.videoId,
+                              });
+                              proposeSong(video, {
+                                source: "search",
+                                position: idx,
+                              });
+                            }}
                             disabled={sessionLive && votingPhase?.phase !== "suggestion"}
                             className={`p-2 rounded-lg transition-all shrink-0 ${
                               sessionLive && votingPhase?.phase !== "suggestion"
