@@ -50,7 +50,7 @@ import {
   Lock,
 } from "lucide-react";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "https://app.tunevote.com";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -897,26 +897,27 @@ const SessionPage = () => {
           );
           results = res.data.items || [];
 
-          for (const item of results) {
+          // Cache writes are a write-through optimization for *future* searches;
+          // they must not block rendering of the results the user just asked for.
+          // Fire all 5 POSTs in parallel and reload the cache in the background.
+          const cacheWrites = results.map((item) => {
             const ytId = item.id.videoId;
             const title = item.snippet.title;
             const thumbnail =
               item.snippet.thumbnails.medium?.url ||
               `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
             const norm = normalize(title);
-
-            try {
-              await axios.post(
+            return axios
+              .post(
                 "https://api.tunevote.com/youtube-cache",
                 { title_norm: norm, title, youtube_id: ytId, thumbnail },
                 { headers: getAuthHeaders() }
-              );
-            } catch (cacheErr) {
-              // Cache population is a best-effort write; user still sees results.
-              console.warn("[Cache] Save failed", cacheErr);
-            }
-          }
-          await loadCache();
+              )
+              .catch((cacheErr) => {
+                console.warn("[Cache] Save failed", cacheErr);
+              });
+          });
+          Promise.allSettled(cacheWrites).then(() => loadCache());
         } else {
           // Cache had zero hits AND no API key is configured. This is a hard
           // diagnostic — the system literally cannot serve text results.
