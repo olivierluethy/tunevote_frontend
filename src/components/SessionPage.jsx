@@ -50,7 +50,7 @@ import {
   Lock,
 } from "lucide-react";
 
-const SOCKET_SERVER = "https://api.tunevote.com";
+const SOCKET_SERVER = "https://api.tunevote.com/";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
