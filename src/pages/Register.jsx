@@ -22,7 +22,7 @@ export default function Register() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("http://localhost:4000/register", {
+      const res = await axios.post("https://api.tunevote.com/register", {
         email,
         password,
       });
@@ -44,11 +44,11 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:4000/auth/google";
+    window.location.href = "https://api.tunevote.com/auth/google";
   };
 
   const handleFacebookLogin = () => {
-    window.location.href = "http://localhost:4000/auth/facebook";
+    window.location.href = "https://api.tunevote.com/auth/facebook";
   };
 
   return (

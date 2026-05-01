@@ -8,7 +8,7 @@ export default function InviteRedirect() {
   useEffect(() => {
   if (!token) return;
 
-  fetch(`http://localhost:4000/invite/${token}`, {
+  fetch(`https://api.tunevote.com/invite/${token}`, {
     method: "GET",
     credentials: "include",
   })

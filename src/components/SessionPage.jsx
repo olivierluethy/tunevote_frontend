@@ -50,7 +50,7 @@ import {
   Lock,
 } from "lucide-react";
 
-const SOCKET_SERVER = "http://localhost:4000/";
+const SOCKET_SERVER = "https://api.tunevote.com/";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -75,6 +75,21 @@ const SessionPage = () => {
   // Per-session in-memory cache of resolved metadata, so we never hit
   // /youtube-info/:id twice for the same video during one mount.
   const metaCacheRef = useRef(new Map());
+
+  // Autoplay diagnostics. The YT IFrame API's playVideo() is synchronous
+  // fire-and-forget — autoplay blocks don't throw or return a rejected
+  // promise. We instead arm a 2s probe after each play attempt and log if
+  // the player never reaches PLAYING (state 1). When that happens in a
+  // hidden tab we set autoplayBlockedRef so the visibilitychange handler
+  // can retry once the user is back in the foreground.
+  const autoplayProbeRef = useRef(null);
+  const autoplayBlockedRef = useRef(false);
+
+  // Holds the latest togglePersonalMute. The Media Session action-handler
+  // effect registers handlers exactly once (so the OS doesn't see them
+  // flicker on every render), so it must reach the live function via this
+  // ref rather than capturing it from a closure.
+  const togglePersonalMuteRef = useRef(null);
 
   const [session, setSession] = useState(null);
   const [proposals, setProposals] = useState([]);
@@ -226,7 +241,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/current-phase`,
+        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
         { headers: getAuthHeaders() }
       );
 
@@ -262,7 +277,7 @@ const SessionPage = () => {
     setSavingName(true);
     try {
       await axios.patch(
-        `http://localhost:4000/sessions/${sessionId}`,
+        `https://api.tunevote.com/sessions/${sessionId}`,
         { title: newName },
         { headers: getAuthHeaders() }
       );
@@ -280,7 +295,7 @@ const SessionPage = () => {
 
     try {
       await axios.delete(
-        `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
         { headers: getAuthHeaders() }
       );
 
@@ -299,7 +314,7 @@ const SessionPage = () => {
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/proposals`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() }
       );
       setProposals(res.data || []);
@@ -311,7 +326,7 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -333,7 +348,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/invite`,
+        `https://api.tunevote.com/sessions/${sessionId}/invite`,
         { email: inviteEmail },
         { headers: getAuthHeaders() }
       );
@@ -357,7 +372,7 @@ const SessionPage = () => {
     if (!guestToken) {
       try {
         const { data } = await axios.post(
-          "http://localhost:4000/guest/join",
+          "https://api.tunevote.com/guest/join",
           { nickname }
         );
         guestToken = data.guestToken;
@@ -384,13 +399,171 @@ const SessionPage = () => {
     currentSongRef.current = currentSong;
   }, [currentSong]);
 
+  // ===========================================================================
+  // Media Session API integration — background audio + lock-screen controls.
+  //
+  // Platform reality (be precise with future readers):
+  //   * Android Chrome (incl. installed PWA) and desktop tab-switch are
+  //     fully addressed by this integration. Registering metadata + at
+  //     least one action handler marks the page as a media producer, which
+  //     prevents the OS from pausing audio under screen lock and surfaces
+  //     play/pause controls in the system media notification.
+  //   * iOS Safari under screen lock remains constrained by the YouTube
+  //     IFrame embed itself, NOT by anything we control here. iOS pauses
+  //     iframe-hosted media a few seconds after screen-off in nearly all
+  //     configurations; the only reliable workaround would be replacing
+  //     the YT iframe with a direct <audio> element pointing at the raw
+  //     stream, which YouTube ToS forbids. The MediaSession metadata we
+  //     register here will still surface lock-screen artwork while audio
+  //     is actually playing, but we cannot keep audio flowing once the
+  //     screen locks on iOS.
+  //
+  // Action handler trade-off:
+  //   The OS lock-screen "play/pause" buttons are wired to toggle the
+  //   user's PERSONAL mute, not the session-wide playback timeline. This
+  //   is intentional. TuneVote sessions are sync'd across all participants
+  //   — truly pausing the local YT iframe would (a) desynchronise this
+  //   user from the rest of the session, (b) on resume, hit the very
+  //   autoplay-policy block we're trying to avoid in the first place.
+  //   "Pause" from the lock screen therefore means "silence me locally
+  //   without disrupting the session for anyone else." Do not "fix" this
+  //   by wiring the handlers to playerRef.pauseVideo/playVideo — that
+  //   would re-introduce the autoplay-block bug AND break the collaborative
+  //   listening model.
+  // ===========================================================================
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    // Clear OS-level metadata when there's no current song (session ended,
+    // user left live). Otherwise the lock screen would show the last track
+    // played from a session the user has now left.
+    if (!currentSong || !currentSong.videoId) {
+      try {
+        navigator.mediaSession.metadata = null;
+      } catch {
+        /* older browsers — ignore */
+      }
+      return;
+    }
+    if (PLACEHOLDER_TITLES.has(currentSong.title)) return;
+
+    try {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: currentSong.title,
+        artist: session?.title || "TuneVote",
+        album: "TuneVote",
+        artwork: currentSong.thumbnail
+          ? [
+              {
+                src: currentSong.thumbnail,
+                sizes: "512x512",
+                type: "image/jpeg",
+              },
+            ]
+          : [],
+      });
+    } catch (err) {
+      console.warn("[mediaSession] metadata update failed:", err);
+    }
+  }, [currentSong, session?.title]);
+
+  // playbackState tracks the user's perceived audio state, which for the
+  // collaborative model means "is local audio actually being heard."
+  // Muted or in a scheduled session-pause → 'paused' (OS shows ▶);
+  // otherwise → 'playing' (OS shows ⏸).
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const inSilence = isMutedForMe || isPaused;
+    navigator.mediaSession.playbackState = inSilence ? "paused" : "playing";
+  }, [isMutedForMe, isPaused]);
+
+  // Action handlers (registered once, persist for the lifetime of the
+  // mount). The play/pause handlers toggle personal mute — see the comment
+  // above for the collaborative-model rationale. nexttrack/previoustrack
+  // are deliberately NOT registered: TuneVote has no client-initiated skip
+  // (the queue advances server-side), so registering no-op handlers would
+  // mislead the OS into showing skip buttons that do nothing.
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const handlePlay = () => {
+      // Unmute via the canonical toggle — same code path as the on-screen
+      // mute button — so localStorage and refs stay consistent.
+      if (mutedRef.current) togglePersonalMuteRef.current?.();
+    };
+    const handlePause = () => {
+      if (!mutedRef.current) togglePersonalMuteRef.current?.();
+    };
+    try {
+      navigator.mediaSession.setActionHandler("play", handlePlay);
+      navigator.mediaSession.setActionHandler("pause", handlePause);
+    } catch (err) {
+      console.warn("[mediaSession] setActionHandler failed:", err);
+    }
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler("play", null);
+        navigator.mediaSession.setActionHandler("pause", null);
+      } catch {
+        /* older browsers — fine to ignore */
+      }
+    };
+  }, []);
+
+  // visibilitychange → visible: re-sync immediately and retry a previously
+  // blocked autoplay. Tabs that were hidden have their setInterval throttled
+  // (Chrome: ~1Hz, sometimes lower), so the next routine 10s sync may be
+  // up to a minute late. Doing it on focus return gives the user near-
+  // instant correction. We do NOT do anything on hidden — we want audio
+  // to keep flowing in the background, not be torn down.
+  useEffect(() => {
+    const onVisibility = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (!isLiveJoined) return;
+
+      // If a previous playVideo() was blocked while the tab was hidden,
+      // retry it now that we have foreground context. The YT API still
+      // doesn't return a promise, but a foreground retry typically clears
+      // the autoplay heuristic.
+      if (autoplayBlockedRef.current && playerRef.current) {
+        autoplayBlockedRef.current = false;
+        try {
+          playerRef.current.playVideo();
+        } catch (err) {
+          console.warn("[autoplay] foreground retry failed:", err);
+        }
+      }
+
+      // Re-fetch playback state and seek if we drifted. Same logic as the
+      // 10s polling interval — duplicated here intentionally so the visible
+      // handler is independent of join state and timer health.
+      try {
+        const { data } = await axios.get(
+          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          { headers: getAuthHeaders() }
+        );
+        if (data?.current_video_id && data.video_start_time) {
+          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const current = playerRef.current?.getCurrentTime?.() || 0;
+          if (Math.abs(current - elapsed) > 2) {
+            playerRef.current?.seekTo(elapsed, true);
+          }
+        }
+      } catch (err) {
+        console.warn("[visibility resync] failed:", err.message);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isLiveJoined, sessionId]);
+
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
+        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -411,7 +584,7 @@ const SessionPage = () => {
       if (sessRes.data.is_private === 1) {
         try {
           const invitesRes = await axios.get(
-            `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
+            `https://api.tunevote.com/sessions/${sessionId}/invites/accepted`,
             { headers: getAuthHeaders() }
           );
           setAcceptedInvites(invitesRes.data || []);
@@ -435,7 +608,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/participants`,
+        `https://api.tunevote.com/sessions/${sessionId}/participants`,
         { headers: getAuthHeaders() }
       );
       setLiveParticipants(res.data || []);
@@ -682,12 +855,16 @@ const SessionPage = () => {
 
     return () => {
       if (playerRef.current) playerRef.current.destroy();
+      if (autoplayProbeRef.current) {
+        clearTimeout(autoplayProbeRef.current);
+        autoplayProbeRef.current = null;
+      }
     };
   }, []);
 
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:4000/youtube-cache");
+      const res = await axios.get("https://api.tunevote.com/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -712,7 +889,7 @@ const SessionPage = () => {
       setRecLoading(true);
       try {
         const res = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/recommendations`,
+          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
           { headers }
         );
         setRecommendations(res.data || []);
@@ -838,7 +1015,7 @@ const SessionPage = () => {
         const started = performance.now();
         try {
           const res = await axios.get(
-            `http://localhost:4000/youtube-info/${youtubeId}`
+            `https://api.tunevote.com/youtube-info/${youtubeId}`
           );
           const info = res.data;
 
@@ -940,7 +1117,7 @@ const SessionPage = () => {
             const norm = normalize(title);
             return axios
               .post(
-                "http://localhost:4000/youtube-cache",
+                "https://api.tunevote.com/youtube-cache",
                 { title_norm: norm, title, youtube_id: ytId, thumbnail },
                 { headers: getAuthHeaders() }
               )
@@ -986,7 +1163,7 @@ const SessionPage = () => {
           setAiLoading(true);
           try {
             const aiRes = await axios.post(
-              `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
+              `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
               { query },
               { headers: getAuthHeaders() }
             );
@@ -1031,6 +1208,13 @@ const SessionPage = () => {
       playerRef.current = null;
     }
 
+    // Cancel any in-flight autoplay probe from the previous player; we're
+    // about to start a fresh one (or none, if shouldPlay is false).
+    if (autoplayProbeRef.current) {
+      clearTimeout(autoplayProbeRef.current);
+      autoplayProbeRef.current = null;
+    }
+
     playerRef.current = new window.YT.Player("youtube-player", {
       height: 0,
       width: 0,
@@ -1042,6 +1226,10 @@ const SessionPage = () => {
         modestbranding: 1,
         rel: 0,
         fs: 0,
+        // Required for inline iframe playback on iOS Safari. Without it,
+        // iOS forces fullscreen on play, which interacts poorly with the
+        // 0×0 hidden div and exacerbates background-audio issues.
+        playsinline: 1,
       },
       events: {
         onReady: () => {
@@ -1060,6 +1248,37 @@ const SessionPage = () => {
 
           if (shouldPlay) {
             playerRef.current.playVideo();
+            // Autoplay block detection. The YT IFrame API does NOT return
+            // a promise from playVideo() and does NOT throw on a blocked
+            // autoplay attempt — the player just never transitions to
+            // PLAYING (state 1). We arm a 2s probe to detect that case
+            // and flag it so the visibilitychange→visible handler can
+            // retry once the user provides foreground context.
+            const probeStart = Date.now();
+            autoplayProbeRef.current = setTimeout(() => {
+              autoplayProbeRef.current = null;
+              const state = playerRef.current?.getPlayerState?.();
+              if (state !== 1 /* PLAYING */) {
+                autoplayBlockedRef.current = true;
+                console.warn(
+                  `[autoplay] playVideo() did not reach PLAYING within ` +
+                    `${Date.now() - probeStart}ms (state=${state}, ` +
+                    `hidden=${document.hidden}). ` +
+                    `Will retry on visibilitychange → visible.`
+                );
+              } else {
+                autoplayBlockedRef.current = false;
+              }
+            }, 2000);
+          }
+        },
+        onStateChange: (e) => {
+          // Resolve the probe early if we reach PLAYING before the 2s
+          // timeout fires.
+          if (e.data === 1 /* PLAYING */ && autoplayProbeRef.current) {
+            clearTimeout(autoplayProbeRef.current);
+            autoplayProbeRef.current = null;
+            autoplayBlockedRef.current = false;
           }
         },
       },
@@ -1085,7 +1304,7 @@ const SessionPage = () => {
     }
     try {
       const res = await axios.get(
-        `http://localhost:4000/youtube-info/${videoId}`
+        `https://api.tunevote.com/youtube-info/${videoId}`
       );
       const title = res.data?.snippet?.title;
       const thumbnail =
@@ -1196,13 +1415,13 @@ const SessionPage = () => {
       }
 
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/join-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() }
       );
 
       const { data } = await axios.get(
-        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() }
       );
 
@@ -1220,7 +1439,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
+          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() }
         );
 
@@ -1249,7 +1468,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/leave-live`,
+        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -1269,7 +1488,7 @@ const SessionPage = () => {
     }
 
     try {
-      await axios.post(`http://localhost:4000/sessions/${sessionId}/start`);
+      await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`);
       loadSessionData();
       trackEvent("session_started", { session_id: sessionId });
     } catch (err) {
@@ -1300,6 +1519,11 @@ const SessionPage = () => {
       playerRef.current?.setVolume(volume);
     }
   };
+
+  // Keep the ref pointed at the latest togglePersonalMute so MediaSession
+  // action handlers (registered once on mount) always invoke the current
+  // closure rather than a stale one.
+  togglePersonalMuteRef.current = togglePersonalMute;
 
   const normalize = (str) => {
     if (!str) return "";
@@ -1361,7 +1585,7 @@ const SessionPage = () => {
       }
 
       await axios.post(
-        `http://localhost:4000/sessions/${sessionId}/proposals`,
+        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
         { videoId, title, thumbnail },
         { headers: getAuthHeaders() }
       );
@@ -1401,7 +1625,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("http://localhost:4000/guest/join", {
+      const res = await axios.post("https://api.tunevote.com/guest/join", {
         nickname,
       });
 
@@ -1925,7 +2149,7 @@ const SessionPage = () => {
                         onClick={async () => {
                           try {
                             await axios.post(
-                              `http://localhost:4000/sessions/${sessionId}/proposals`,
+                              `https://api.tunevote.com/sessions/${sessionId}/proposals`,
                               {
                                 item_type: "pause",
                                 duration: pauseDuration,
@@ -2172,7 +2396,7 @@ const SessionPage = () => {
                               setRemovingUserId(invite.id);
                               try {
                                 await axios.delete(
-                                  `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
+                                  `https://api.tunevote.com/sessions/${sessionId}/invites/${invite.id}`,
                                   { headers: getAuthHeaders() }
                                 );
                                 setAcceptedInvites((prev) =>
