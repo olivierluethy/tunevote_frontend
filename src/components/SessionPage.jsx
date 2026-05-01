@@ -76,14 +76,28 @@ const SessionPage = () => {
   // /youtube-info/:id twice for the same video during one mount.
   const metaCacheRef = useRef(new Map());
 
-  // Autoplay diagnostics. The YT IFrame API's playVideo() is synchronous
-  // fire-and-forget — autoplay blocks don't throw or return a rejected
-  // promise. We instead arm a 2s probe after each play attempt and log if
-  // the player never reaches PLAYING (state 1). When that happens in a
-  // hidden tab we set autoplayBlockedRef so the visibilitychange handler
-  // can retry once the user is back in the foreground.
+  // Autoplay diagnostics + per-track retry state.
+  //
+  // The YT IFrame API's playVideo() is synchronous fire-and-forget — autoplay
+  // blocks don't throw or return a rejected promise. We get three signals:
+  //   * synchronous throw (only when player methods aren't ready) — try/catch
+  //   * player state stuck at UNSTARTED/CUED — onStateChange + 2s probe
+  //   * video-level errors (geoblock, age-gate) — onError event
+  //
+  // pendingPlayRef holds the per-track expectation set the moment we know
+  // we want a track to play (BEFORE YT.Player constructs, so the visibility
+  // handler can act on it even if onReady never fires under screen lock).
+  // Shape: { videoId, attempts, lastTrigger } | null. Cleared by
+  // onStateChange when PLAYING is observed, by onError when the video
+  // is genuinely unplayable, or by the next track-advance overwriting it.
+  //
+  // The 2s probe is a foreground diagnostic + retry trigger. It is NOT
+  // load-bearing for screen-lock recovery because setTimeout is throttled
+  // or frozen on backgrounded mobile tabs — visibilitychange → visible is
+  // the reliable trigger for that path.
   const autoplayProbeRef = useRef(null);
-  const autoplayBlockedRef = useRef(false);
+  const pendingPlayRef = useRef(null);
+  const MAX_PLAY_ATTEMPTS = 5;
 
   // Holds the latest togglePersonalMute. The Media Session action-handler
   // effect registers handlers exactly once (so the OS doesn't see them
@@ -508,33 +522,39 @@ const SessionPage = () => {
     };
   }, []);
 
-  // visibilitychange → visible: re-sync immediately and retry a previously
-  // blocked autoplay. Tabs that were hidden have their setInterval throttled
-  // (Chrome: ~1Hz, sometimes lower), so the next routine 10s sync may be
-  // up to a minute late. Doing it on focus return gives the user near-
-  // instant correction. We do NOT do anything on hidden — we want audio
-  // to keep flowing in the background, not be torn down.
+  // visibilitychange → visible: retry a pending play first, THEN re-sync.
+  //
+  // Order matters. If we issue seekTo() against a player still stuck in
+  // UNSTARTED/CUED (because of an autoplay block while the tab was hidden),
+  // the seek is applied to a non-playing player and the state machine can
+  // misbehave on the eventual play. So: kick playVideo() first, yield ~150ms
+  // for the player to begin transitioning, then measure currentTime and
+  // seek if drifted.
+  //
+  // Tabs that were hidden have their setInterval throttled (Chrome: ~1Hz
+  // or frozen entirely on mobile screen lock), so the routine 10s sync may
+  // be up to a minute late. Doing it on focus return gives near-instant
+  // correction. We do NOTHING on hidden — we want audio to keep flowing in
+  // the background, not be torn down.
   useEffect(() => {
     const onVisibility = async () => {
       if (document.visibilityState !== "visible") return;
       if (!isLiveJoined) return;
 
-      // If a previous playVideo() was blocked while the tab was hidden,
-      // retry it now that we have foreground context. The YT API still
-      // doesn't return a promise, but a foreground retry typically clears
-      // the autoplay heuristic.
-      if (autoplayBlockedRef.current && playerRef.current) {
-        autoplayBlockedRef.current = false;
-        try {
-          playerRef.current.playVideo();
-        } catch (err) {
-          console.warn("[autoplay] foreground retry failed:", err);
-        }
-      }
+      // Step 1: retry pending play. attemptPlay is a no-op if the player
+      // is already PLAYING, if there's no expectation, or if the cap is
+      // reached — safe to call unconditionally.
+      attemptPlay("visibility");
 
-      // Re-fetch playback state and seek if we drifted. Same logic as the
-      // 10s polling interval — duplicated here intentionally so the visible
-      // handler is independent of join state and timer health.
+      // Step 2: yield briefly so the YT player can begin reacting to the
+      // playVideo() before we measure currentTime for the seek delta.
+      // 150ms is empirical — long enough for state to leave UNSTARTED in
+      // the common case, short enough that re-sync still feels instant.
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Step 3: re-fetch authoritative playback state and seek if we
+      // drifted. Same logic as the 10s polling interval — duplicated here
+      // intentionally so the visible handler is independent of timer health.
       try {
         const { data } = await axios.get(
           `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
@@ -859,6 +879,7 @@ const SessionPage = () => {
         clearTimeout(autoplayProbeRef.current);
         autoplayProbeRef.current = null;
       }
+      pendingPlayRef.current = null;
     };
   }, []);
 
@@ -1202,6 +1223,73 @@ const SessionPage = () => {
     }, 300);
   }, [searchQuery, videoCache, sessionLive, isLiveJoined, sessionId, loadCache]);
 
+  // Single retry primitive shared by every trigger (initial onReady call,
+  // foreground 2s probe, visibilitychange → visible). Increments the per-
+  // track attempt counter, records which trigger fired, guards against
+  // stale tracks (avoids retrying a video that the player has since
+  // navigated away from), and bails when the cap is reached.
+  //
+  // Returns true if a playVideo() was actually issued, false otherwise.
+  const attemptPlay = (trigger) => {
+    const pending = pendingPlayRef.current;
+    if (!pending) return false;
+    if (pending.attempts >= MAX_PLAY_ATTEMPTS) return false;
+    const player = playerRef.current;
+    if (!player) return false;
+
+    // Stale-track guard: if the player has moved on to a different video
+    // (e.g. another playback_sync arrived between scheduling and firing),
+    // abandon this expectation rather than yanking the new track back.
+    let currentVid = null;
+    try {
+      currentVid = player.getVideoData?.()?.video_id || null;
+    } catch {
+      /* getVideoData throws before player is fully ready — treat as unknown */
+    }
+    if (currentVid && currentVid !== pending.videoId) {
+      pendingPlayRef.current = null;
+      return false;
+    }
+
+    let state = null;
+    try {
+      state = player.getPlayerState?.();
+    } catch {
+      /* state may be unavailable pre-onReady */
+    }
+    if (state === 1 /* PLAYING */) {
+      // Already playing — clear pending and skip. onStateChange would also
+      // clear, but doing it here avoids an unnecessary playVideo() call.
+      pendingPlayRef.current = null;
+      return false;
+    }
+
+    pending.attempts += 1;
+    pending.lastTrigger = trigger;
+    // Only log retries (attempt #2+). The initial #1 from onReady is the
+    // happy path and shouldn't add noise.
+    if (pending.attempts > 1) {
+      console.warn(
+        `[autoplay] retry attempt ${pending.attempts}/${MAX_PLAY_ATTEMPTS} ` +
+          `via ${trigger} (state=${state}, hidden=${document.hidden}, ` +
+          `videoId=${pending.videoId})`
+      );
+    }
+    try {
+      player.playVideo();
+    } catch (err) {
+      // playVideo() does NOT return a promise so this catches synchronous
+      // errors only (typically "method not available before onReady").
+      // Autoplay-policy blocks are silent — they show up as state staying
+      // at UNSTARTED/CUED and are handled by the next retry trigger.
+      console.warn(
+        `[autoplay] playVideo() threw during ${trigger} attempt:`,
+        err?.message || err
+      );
+    }
+    return true;
+  };
+
   const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
     if (playerRef.current) {
       playerRef.current.destroy();
@@ -1214,6 +1302,15 @@ const SessionPage = () => {
       clearTimeout(autoplayProbeRef.current);
       autoplayProbeRef.current = null;
     }
+
+    // Set the per-track expectation BEFORE constructing YT.Player. If the
+    // iframe never initializes (e.g. extreme iOS background scenarios) the
+    // visibilitychange handler will still find this expectation when the
+    // user unlocks and can retry — driven by data, not by an event we
+    // never received.
+    pendingPlayRef.current = shouldPlay
+      ? { videoId, attempts: 0, lastTrigger: null }
+      : null;
 
     playerRef.current = new window.YT.Player("youtube-player", {
       height: 0,
@@ -1247,38 +1344,68 @@ const SessionPage = () => {
           playerRef.current.seekTo(startSeconds, true);
 
           if (shouldPlay) {
-            playerRef.current.playVideo();
-            // Autoplay block detection. The YT IFrame API does NOT return
-            // a promise from playVideo() and does NOT throw on a blocked
-            // autoplay attempt — the player just never transitions to
-            // PLAYING (state 1). We arm a 2s probe to detect that case
-            // and flag it so the visibilitychange→visible handler can
-            // retry once the user provides foreground context.
+            // Initial play attempt (#1). attemptPlay handles the YT API's
+            // synchronous-throw case; autoplay-policy blocks are silent and
+            // are detected by the probe / onStateChange below.
+            attemptPlay("initial");
+
+            // Foreground diagnostic + retry trigger. Fires after 2s; if the
+            // player still isn't PLAYING it logs the diagnostic and issues
+            // ONE retry. Further retries come from onStateChange (foreground)
+            // or visibilitychange → visible (screen-lock recovery). Probe
+            // does NOT re-arm; we cap retry sources here to avoid cascades.
             const probeStart = Date.now();
             autoplayProbeRef.current = setTimeout(() => {
               autoplayProbeRef.current = null;
               const state = playerRef.current?.getPlayerState?.();
-              if (state !== 1 /* PLAYING */) {
-                autoplayBlockedRef.current = true;
-                console.warn(
-                  `[autoplay] playVideo() did not reach PLAYING within ` +
-                    `${Date.now() - probeStart}ms (state=${state}, ` +
-                    `hidden=${document.hidden}). ` +
-                    `Will retry on visibilitychange → visible.`
-                );
-              } else {
-                autoplayBlockedRef.current = false;
-              }
+              if (state === 1 /* PLAYING */) return;
+              console.warn(
+                `[autoplay] probe: state=${state} after ` +
+                  `${Date.now() - probeStart}ms (hidden=${document.hidden}). ` +
+                  `Issuing one retry; further attempts will come from ` +
+                  `onStateChange or visibility return.`
+              );
+              attemptPlay("probe");
             }, 2000);
           }
         },
         onStateChange: (e) => {
-          // Resolve the probe early if we reach PLAYING before the 2s
-          // timeout fires.
-          if (e.data === 1 /* PLAYING */ && autoplayProbeRef.current) {
+          // Recovery path: any time we reach PLAYING, clear the probe and
+          // the per-track expectation. If recovery required > 1 attempt,
+          // emit the observability log so we can see how often the
+          // visibility-driven retry is actually load-bearing.
+          if (e.data === 1 /* PLAYING */) {
+            if (autoplayProbeRef.current) {
+              clearTimeout(autoplayProbeRef.current);
+              autoplayProbeRef.current = null;
+            }
+            const pending = pendingPlayRef.current;
+            if (pending && pending.videoId === videoId) {
+              if (pending.attempts > 1) {
+                console.log(
+                  `[autoplay] recovered after ${pending.attempts} attempts ` +
+                    `(last trigger: ${pending.lastTrigger}), video ${pending.videoId}`
+                );
+              }
+              pendingPlayRef.current = null;
+            }
+          }
+        },
+        onError: (e) => {
+          // Genuine video-level errors (private, geoblocked, age-gated,
+          // removed). Distinct from autoplay block — there's no point
+          // retrying. Clear the expectation so the visibility handler
+          // doesn't re-attempt on the next foreground return.
+          console.warn(
+            `[autoplay] YT player error (code=${e?.data}) for video ` +
+              `${videoId}; abandoning retries.`
+          );
+          if (pendingPlayRef.current?.videoId === videoId) {
+            pendingPlayRef.current = null;
+          }
+          if (autoplayProbeRef.current) {
             clearTimeout(autoplayProbeRef.current);
             autoplayProbeRef.current = null;
-            autoplayBlockedRef.current = false;
           }
         },
       },
