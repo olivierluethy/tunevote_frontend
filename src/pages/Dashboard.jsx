@@ -78,7 +78,7 @@ export default function Dashboard() {
 
   // Neu: Socket richtig initialisieren
   useEffect(() => {
-    socketRef.current = io("https://api.tunevote.com");
+    socketRef.current = io("https://api.tunevote.com/");
 
     socketRef.current.on("participant_count_update", (data) => {
       console.log("Dashboard: participant_count_update empfangen", data);
