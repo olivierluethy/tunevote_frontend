@@ -50,7 +50,7 @@ import {
   Lock,
 } from "lucide-react";
 
-const SOCKET_SERVER = "https://api.tunevote.com/";
+const SOCKET_SERVER = "http://localhost:4000/";
 
 const SessionPage = () => {
   const { sessionId } = useParams();
@@ -59,6 +59,22 @@ const SessionPage = () => {
   const playerRef = useRef(null);
   const socketRef = useRef(null);
   const syncIntervalRef = useRef(null);
+
+  // Refs that mirror state for use inside socket-driven callbacks.
+  // The socket handlers are registered in an effect whose deps don't include
+  // `queue`, `isMutedForMe`, or `currentSong`; reading state directly from
+  // those handlers would observe a stale closure on every track auto-advance.
+  const queueRef = useRef([]);
+  const mutedRef = useRef(false);
+  const currentSongRef = useRef(null);
+
+  // Tracks the most recent video_id requested by syncPlayback so a
+  // late-arriving /youtube-info response for a previous track can be discarded.
+  const currentVideoIdRef = useRef(null);
+
+  // Per-session in-memory cache of resolved metadata, so we never hit
+  // /youtube-info/:id twice for the same video during one mount.
+  const metaCacheRef = useRef(new Map());
 
   const [session, setSession] = useState(null);
   const [proposals, setProposals] = useState([]);
@@ -96,9 +112,11 @@ const SessionPage = () => {
   const [isHost, setIsHost] = useState(false);
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [volume, setVolume] = useState(50);
-  const [isMutedForMe, setIsMutedForMe] = useState(
-    () => localStorage.getItem(`mute_${sessionId}`) === "true"
-  );
+  const [isMutedForMe, setIsMutedForMe] = useState(() => {
+    const initial = localStorage.getItem(`mute_${sessionId}`) === "true";
+    mutedRef.current = initial;
+    return initial;
+  });
   const [isLiveJoined, setIsLiveJoined] = useState(false);
   const [sessionLive, setSessionLive] = useState(false);
 
@@ -208,7 +226,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
+        `http://localhost:4000/sessions/${sessionId}/current-phase`,
         { headers: getAuthHeaders() }
       );
 
@@ -244,7 +262,7 @@ const SessionPage = () => {
     setSavingName(true);
     try {
       await axios.patch(
-        `https://api.tunevote.com/sessions/${sessionId}`,
+        `http://localhost:4000/sessions/${sessionId}`,
         { title: newName },
         { headers: getAuthHeaders() }
       );
@@ -262,7 +280,7 @@ const SessionPage = () => {
 
     try {
       await axios.delete(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${proposalId}`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${proposalId}`,
         { headers: getAuthHeaders() }
       );
 
@@ -281,7 +299,7 @@ const SessionPage = () => {
   const loadProposals = useCallback(async () => {
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         { headers: getAuthHeaders() }
       );
       setProposals(res.data || []);
@@ -293,7 +311,7 @@ const SessionPage = () => {
   const voteSong = async (songId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals/${songId}/vote`,
+        `http://localhost:4000/sessions/${sessionId}/proposals/${songId}/vote`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -315,7 +333,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/invite`,
+        `http://localhost:4000/sessions/${sessionId}/invite`,
         { email: inviteEmail },
         { headers: getAuthHeaders() }
       );
@@ -339,7 +357,7 @@ const SessionPage = () => {
     if (!guestToken) {
       try {
         const { data } = await axios.post(
-          "https://api.tunevote.com/guest/join",
+          "http://localhost:4000/guest/join",
           { nickname }
         );
         guestToken = data.guestToken;
@@ -353,13 +371,26 @@ const SessionPage = () => {
     return guestToken;
   };
 
+  // Mirror state into refs so socket-driven callbacks read fresh values.
+  // Without this, the playback_sync handler keeps reading the queue/mute
+  // values that existed when the socket listener was first registered.
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+  useEffect(() => {
+    mutedRef.current = isMutedForMe;
+  }, [isMutedForMe]);
+  useEffect(() => {
+    currentSongRef.current = currentSong;
+  }, [currentSong]);
+
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}`, {
           headers: getAuthHeaders(),
         }),
-        axios.get(`https://api.tunevote.com/sessions/${sessionId}/queue`, {
+        axios.get(`http://localhost:4000/sessions/${sessionId}/queue`, {
           headers: getAuthHeaders(),
         }),
       ]);
@@ -380,7 +411,7 @@ const SessionPage = () => {
       if (sessRes.data.is_private === 1) {
         try {
           const invitesRes = await axios.get(
-            `https://api.tunevote.com/sessions/${sessionId}/invites/accepted`,
+            `http://localhost:4000/sessions/${sessionId}/invites/accepted`,
             { headers: getAuthHeaders() }
           );
           setAcceptedInvites(invitesRes.data || []);
@@ -404,7 +435,7 @@ const SessionPage = () => {
 
     try {
       const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/participants`,
+        `http://localhost:4000/sessions/${sessionId}/participants`,
         { headers: getAuthHeaders() }
       );
       setLiveParticipants(res.data || []);
@@ -656,7 +687,7 @@ const SessionPage = () => {
 
   const loadCache = useCallback(async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/youtube-cache");
+      const res = await axios.get("http://localhost:4000/youtube-cache");
       const normalized = res.data.map((item) => ({
         ...item,
         youtubeId: item.youtube_id || item.youtubeId,
@@ -681,7 +712,7 @@ const SessionPage = () => {
       setRecLoading(true);
       try {
         const res = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/recommendations`,
+          `http://localhost:4000/sessions/${sessionId}/recommendations`,
           { headers }
         );
         setRecommendations(res.data || []);
@@ -807,7 +838,7 @@ const SessionPage = () => {
         const started = performance.now();
         try {
           const res = await axios.get(
-            `https://api.tunevote.com/youtube-info/${youtubeId}`
+            `http://localhost:4000/youtube-info/${youtubeId}`
           );
           const info = res.data;
 
@@ -909,7 +940,7 @@ const SessionPage = () => {
             const norm = normalize(title);
             return axios
               .post(
-                "https://api.tunevote.com/youtube-cache",
+                "http://localhost:4000/youtube-cache",
                 { title_norm: norm, title, youtube_id: ytId, thumbnail },
                 { headers: getAuthHeaders() }
               )
@@ -955,7 +986,7 @@ const SessionPage = () => {
           setAiLoading(true);
           try {
             const aiRes = await axios.post(
-              `https://api.tunevote.com/sessions/${sessionId}/ai-suggestions`,
+              `http://localhost:4000/sessions/${sessionId}/ai-suggestions`,
               { query },
               { headers: getAuthHeaders() }
             );
@@ -1014,7 +1045,11 @@ const SessionPage = () => {
       },
       events: {
         onReady: () => {
-          if (isMutedForMe) {
+          // Read mute via ref. createPlayer is called from syncPlayback, which
+          // is invoked by a socket handler whose closure can lag the user's
+          // toggle — without the ref, every track auto-advance would reset
+          // the YT player to unmuted regardless of the user's preference.
+          if (mutedRef.current) {
             playerRef.current.mute();
           } else {
             playerRef.current.unMute();
@@ -1031,6 +1066,58 @@ const SessionPage = () => {
     });
   };
 
+  // Treat these as "no real title yet" sentinels when deciding whether to
+  // skip the fallback fetch. Anything else means metadata is already resolved.
+  const PLACEHOLDER_TITLES = new Set(["", "Unknown", "Loading…"]);
+
+  // Resolve title/thumbnail for `videoId` from the cache endpoint, then apply
+  // it to currentSong — but only if the player is still on that video.
+  const fetchAndApplyMetadata = async (videoId) => {
+    // Don't refetch what we've already resolved during this session mount.
+    if (metaCacheRef.current.has(videoId)) {
+      const cached = metaCacheRef.current.get(videoId);
+      setCurrentSong((prev) =>
+        prev && prev.videoId === videoId
+          ? { ...prev, title: cached.title, thumbnail: cached.thumbnail }
+          : prev
+      );
+      return;
+    }
+    try {
+      const res = await axios.get(
+        `http://localhost:4000/youtube-info/${videoId}`
+      );
+      const title = res.data?.snippet?.title;
+      const thumbnail =
+        res.data?.snippet?.thumbnails?.medium?.url ||
+        res.data?.snippet?.thumbnails?.default?.url ||
+        "";
+      if (!title) return;
+
+      metaCacheRef.current.set(videoId, { title, thumbnail });
+
+      // Stale-response guard: between firing this fetch and now, another
+      // track may have started. currentVideoIdRef always reflects the most
+      // recent syncPlayback request; the YT player API gives a second
+      // cross-check in case we beat the next syncPlayback to the punch.
+      if (currentVideoIdRef.current !== videoId) return;
+      const ytData = playerRef.current?.getVideoData?.();
+      if (ytData?.video_id && ytData.video_id !== videoId) return;
+
+      setCurrentSong((prev) =>
+        prev && prev.videoId === videoId
+          ? { ...prev, title, thumbnail }
+          : prev
+      );
+    } catch (err) {
+      console.warn(
+        "[metadata fallback] /youtube-info failed for",
+        videoId,
+        err.message
+      );
+    }
+  };
+
   const syncPlayback = ({
     current_queue_item_id,
     current_video_id,
@@ -1039,21 +1126,62 @@ const SessionPage = () => {
   }) => {
     if (!current_video_id || !video_start_time) return;
 
+    // Record the latest video request so a slow fetch from a previous call
+    // can detect that it's stale before mutating currentSong.
+    currentVideoIdRef.current = current_video_id;
+
+    // Read the queue via ref. Reading `queue` directly here would observe
+    // whatever value was captured when the socket handler was registered —
+    // typically empty, since the handler is registered before the first
+    // /queue load completes.
+    const localQueue = queueRef.current;
     const item =
-      queue.find((i) => i.id === current_queue_item_id) ||
-      queue.find((i) => i.video_id === current_video_id);
+      localQueue.find((i) => i.id === current_queue_item_id) ||
+      localQueue.find((i) => i.video_id === current_video_id);
 
     const elapsed = (Date.now() - video_start_time) / 1000;
     const progress = Math.max(0, elapsed);
 
+    // Resolve title/thumbnail in priority order: queue row, in-memory cache,
+    // already-displayed currentSong (if it's the same video), then placeholder.
+    const cachedMeta = metaCacheRef.current.get(current_video_id);
+    const prevSong = currentSongRef.current;
+    const prevHasValidForSameVideo =
+      prevSong?.videoId === current_video_id &&
+      prevSong?.title &&
+      !PLACEHOLDER_TITLES.has(prevSong.title);
+
+    let resolvedTitle = item?.title || cachedMeta?.title || null;
+    let resolvedThumb = item?.thumbnail || cachedMeta?.thumbnail || "";
+    if (!resolvedTitle && prevHasValidForSameVideo) {
+      resolvedTitle = prevSong.title;
+      resolvedThumb = prevSong.thumbnail || resolvedThumb;
+    }
+
+    // Cache anything we just resolved so subsequent advances onto the same
+    // video skip both the queue lookup and the network fetch.
+    if (resolvedTitle && !cachedMeta) {
+      metaCacheRef.current.set(current_video_id, {
+        title: resolvedTitle,
+        thumbnail: resolvedThumb,
+      });
+    }
+
     setCurrentSong({
       queueItemId: current_queue_item_id || item?.id,
       videoId: current_video_id,
-      title: item?.title || "Unknown",
-      thumbnail: item?.thumbnail || "",
+      title: resolvedTitle || "Loading…",
+      thumbnail: resolvedThumb,
     });
 
     createPlayer(current_video_id, progress, is_playing);
+
+    // Only hit the network if we have no real title for this video. This
+    // covers the race where playback_sync arrives before /queue refreshes
+    // following an auto-advance.
+    if (!resolvedTitle) {
+      fetchAndApplyMetadata(current_video_id);
+    }
   };
 
   const joinLive = async () => {
@@ -1068,13 +1196,13 @@ const SessionPage = () => {
       }
 
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
+        `http://localhost:4000/sessions/${sessionId}/join-live`,
         {},
         { headers: getAuthHeaders() }
       );
 
       const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+        `http://localhost:4000/sessions/${sessionId}/playback-sync`,
         { headers: getAuthHeaders() }
       );
 
@@ -1092,7 +1220,7 @@ const SessionPage = () => {
       if (!isLiveJoined) return;
       try {
         const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
+          `http://localhost:4000/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() }
         );
 
@@ -1121,7 +1249,7 @@ const SessionPage = () => {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
+        `http://localhost:4000/sessions/${sessionId}/leave-live`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -1141,7 +1269,7 @@ const SessionPage = () => {
     }
 
     try {
-      await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`);
+      await axios.post(`http://localhost:4000/sessions/${sessionId}/start`);
       loadSessionData();
       trackEvent("session_started", { session_id: sessionId });
     } catch (err) {
@@ -1159,6 +1287,10 @@ const SessionPage = () => {
 
   const togglePersonalMute = () => {
     const next = !isMutedForMe;
+    // Update the ref synchronously so a player created in the same tick
+    // (e.g. a coincident playback_sync) reads the new value, not the old
+    // setIsMutedForMe-pending value.
+    mutedRef.current = next;
     setIsMutedForMe(next);
     localStorage.setItem(`mute_${sessionId}`, next);
     if (next) {
@@ -1229,7 +1361,7 @@ const SessionPage = () => {
       }
 
       await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+        `http://localhost:4000/sessions/${sessionId}/proposals`,
         { videoId, title, thumbnail },
         { headers: getAuthHeaders() }
       );
@@ -1269,7 +1401,7 @@ const SessionPage = () => {
   const handleGuestJoin = async () => {
     if (!nickname.trim()) return;
     try {
-      const res = await axios.post("https://api.tunevote.com/guest/join", {
+      const res = await axios.post("http://localhost:4000/guest/join", {
         nickname,
       });
 
@@ -1793,7 +1925,7 @@ const SessionPage = () => {
                         onClick={async () => {
                           try {
                             await axios.post(
-                              `https://api.tunevote.com/sessions/${sessionId}/proposals`,
+                              `http://localhost:4000/sessions/${sessionId}/proposals`,
                               {
                                 item_type: "pause",
                                 duration: pauseDuration,
@@ -2040,7 +2172,7 @@ const SessionPage = () => {
                               setRemovingUserId(invite.id);
                               try {
                                 await axios.delete(
-                                  `https://api.tunevote.com/sessions/${sessionId}/invites/${invite.id}`,
+                                  `http://localhost:4000/sessions/${sessionId}/invites/${invite.id}`,
                                   { headers: getAuthHeaders() }
                                 );
                                 setAcceptedInvites((prev) =>
