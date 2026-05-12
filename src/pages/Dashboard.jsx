@@ -38,6 +38,7 @@ import {
   MoreVertical,
   Play,
   ArrowRight,
+  CreditCard,
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -57,6 +58,8 @@ export default function Dashboard() {
   const [copiedId, setCopiedId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const [paywallLoading, setPaywallLoading] = useState(false);
 
   const [sentInvites, setSentInvites] = useState([]);
   const [receivedInvites, setReceivedInvites] = useState([]);
@@ -292,10 +295,45 @@ export default function Dashboard() {
         is_private: isPrivate,
       });
     } catch (err) {
-      alert("Could not create session");
-      trackEvent("session_create_failed");
+      if (err?.response?.status === 402) {
+        setShowPaywallModal(true);
+        trackEvent("paywall_shown", { trigger: "create_private_session" });
+      } else {
+        alert("Could not create session");
+        trackEvent("session_create_failed");
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startCheckout = async () => {
+    if (paywallLoading) return;
+    setPaywallLoading(true);
+    try {
+      const res = await axios.post(
+        "https://api.tunevote.com/billing/checkout-session",
+        {},
+        { headers: getAuthHeaders() }
+      );
+      trackEvent("checkout_started");
+      window.location.href = res.data.url;
+    } catch {
+      setPaywallLoading(false);
+      alert("Could not start checkout. Please try again.");
+    }
+  };
+
+  const openCustomerPortal = async () => {
+    try {
+      const res = await axios.post(
+        "https://api.tunevote.com/billing/portal-session",
+        {},
+        { headers: getAuthHeaders() }
+      );
+      window.location.href = res.data.url;
+    } catch {
+      alert("Could not open subscription management.");
     }
   };
 
@@ -656,6 +694,21 @@ export default function Dashboard() {
                         <span className="text-xs text-white/40">
                           {pendingSentInvitesCount}
                         </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+                )}
+                {!isGuest && (
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={openCustomerPortal}
+                        className={`${
+                          active ? "bg-white/5" : ""
+                        } flex w-full items-center gap-2 px-4 py-2.5 text-sm`}
+                      >
+                        <CreditCard className="w-4 h-4 text-purple-400" />
+                        Manage subscription
                       </button>
                     )}
                   </Menu.Item>
@@ -1203,6 +1256,58 @@ export default function Dashboard() {
                   className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 font-medium text-sm transition-all"
                 >
                   Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPaywallModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => !paywallLoading && setShowPaywallModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20">
+                  <Lock className="w-5 h-5 text-pink-400" />
+                </div>
+                <h3 className="text-lg font-semibold">Unlock private sessions</h3>
+              </div>
+
+              <p className="text-sm text-white/60 mb-2">
+                Private sessions are invitation-only and stay off the public list.
+              </p>
+              <p className="text-sm text-white/60 mb-6">
+                Subscribe for <span className="text-white font-semibold">$5/month</span> to create unlimited private sessions. Cancel any time.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  disabled={paywallLoading}
+                  onClick={() => setShowPaywallModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-medium text-sm transition-all disabled:opacity-40"
+                >
+                  Not now
+                </button>
+                <button
+                  onClick={startCheckout}
+                  disabled={paywallLoading}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-lg hover:shadow-purple-500/25 font-medium text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  {paywallLoading ? "Redirecting…" : "Subscribe"}
                 </button>
               </div>
             </motion.div>
