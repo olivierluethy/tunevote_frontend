@@ -1678,36 +1678,50 @@ const SessionPage = () => {
   }
 
   // ---------------------------------------------------------------------------
-  // Reusable sub-renderers, kept inline because they close over a lot of state
-  // and refactoring them into separate files would add noise without saving
-  // meaningful lines.
+  // SEARCH BLOCK — defined as a JSX expression (NOT a component function).
+  //
+  // Why this matters: a function component defined inside the parent renderer
+  // is recreated on every parent render. React then sees a "different
+  // component" each time and unmounts/remounts its DOM, which destroys input
+  // focus, selection, and keystroke state — symptoms previously reported as
+  // "search cuts off" and "can't delete what I'm typing".
+  //
+  // Storing the JSX directly in a `const` means the parent renders the same
+  // <input> element (same position in the tree) on every render, so React
+  // reconciles it as the SAME DOM node. Focus and caret position survive
+  // exactly as they did in the original single-input implementation.
+  //
+  // Only one variant exists, with `large` derived from stage. We rely on a
+  // single render of the input across the whole component — only one stage
+  // is active at a time, so React only sees one input in the tree.
   // ---------------------------------------------------------------------------
 
-  const renderSearchBar = ({ autoFocus = false, large = false } = {}) => (
+  const isLargeSearch = stage === "empty";
+
+  const searchBlock = (
     <div className="space-y-2">
       <div
         className={`relative flex items-center gap-2 ${
-          large ? "p-1" : ""
+          isLargeSearch ? "p-1" : ""
         } rounded-2xl bg-white/5 border-2 border-white/10 focus-within:border-purple-400/60 transition-colors`}
       >
         <Search
           className={`absolute left-4 text-white/40 pointer-events-none ${
-            large ? "w-5 h-5" : "w-4 h-4"
+            isLargeSearch ? "w-5 h-5" : "w-4 h-4"
           }`}
         />
         <input
           ref={searchInputRef}
           type="text"
           placeholder={
-            large
+            isLargeSearch
               ? "Type a song or paste a YouTube link…"
               : "Add another song…"
           }
           className={`w-full bg-transparent text-white placeholder-white/40 focus:outline-none ${
-            large ? "pl-12 pr-24 py-4 text-base" : "pl-10 pr-20 py-3 text-sm"
+            isLargeSearch ? "pl-12 pr-24 py-4 text-base" : "pl-10 pr-20 py-3 text-sm"
           }`}
           value={searchQuery}
-          autoFocus={autoFocus}
           disabled={!canAddSongs}
           onFocus={() =>
             trackEvent("search_input_focused", { session_id: sessionId })
@@ -1870,8 +1884,19 @@ const SessionPage = () => {
       {/* ──────────────────────────────────────────────────────────────────────
           STAGE-AWARE BODY. The page reshapes itself based on `stage`.
           One hero, then context. No more competing sections.
+
+          IMPORTANT: the search input is rendered exactly ONCE, from a stable
+          position below the stage-specific hero content. Previously, each
+          stage branch rendered its own copy of {searchBlock}, which meant
+          React mounted a different <input> for each stage — destroying focus
+          and selection state during stage transitions (most visibly when a
+          successful "add song" pushed the user from `empty` to `building`).
+          Keeping the input at one fixed JSX position lets React reconcile it
+          as the same DOM node across stage transitions.
          ──────────────────────────────────────────────────────────────────── */}
       <main className="relative z-10 pb-32 max-w-2xl mx-auto">
+
+        {/* HERO SECTION — varies by stage, sits ABOVE the stable search input */}
 
         {/* ─── STAGE: empty ─── */}
         {stage === "empty" && (
@@ -1879,7 +1904,7 @@ const SessionPage = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="px-4 pt-8 pb-6"
+            className="px-4 pt-8 pb-2"
           >
             <div className="text-center mb-8">
               <motion.div
@@ -1898,41 +1923,13 @@ const SessionPage = () => {
                 {isHost ? " you can start the session." : " the host will start the session."}
               </p>
             </div>
-
-            {renderSearchBar({ autoFocus: true, large: true })}
-
-            {/* Soft step indicator — reduces "what's next?" anxiety */}
-            <div className="mt-8 px-2">
-              <div className="flex items-center gap-3 text-xs text-white/40">
-                <div className="flex items-center gap-2 text-purple-300">
-                  <div className="w-6 h-6 rounded-full bg-purple-500/30 border border-purple-400/50 flex items-center justify-center font-bold">
-                    1
-                  </div>
-                  <span>Add songs</span>
-                </div>
-                <ArrowRight className="w-3 h-3" />
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-bold">
-                    2
-                  </div>
-                  <span>{isHost ? "Start session" : "Wait for host"}</span>
-                </div>
-                <ArrowRight className="w-3 h-3" />
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-bold">
-                    3
-                  </div>
-                  <span>Vote & listen</span>
-                </div>
-              </div>
-            </div>
           </motion.section>
         )}
 
-        {/* ─── STAGE: building (has songs, not yet started) ─── */}
+        {/* ─── STAGE: building (guest, has songs, not yet started) ─── */}
         {stage === "building" && !isHost && (
-          <section className="px-4 pt-6 pb-3">
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 to-orange-500/10 border border-amber-500/30 mb-4 flex items-center gap-4">
+          <section className="px-4 pt-6 pb-2">
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 to-orange-500/10 border border-amber-500/30 flex items-center gap-4">
               <div className="p-2 rounded-xl bg-amber-500/20">
                 <Timer className="w-5 h-5 text-amber-300" />
               </div>
@@ -1943,12 +1940,12 @@ const SessionPage = () => {
                 </p>
               </div>
             </div>
-            {renderSearchBar()}
           </section>
         )}
 
+        {/* ─── STAGE: ready (host, has songs, not yet started) ─── */}
         {stage === "ready" && (
-          <section className="px-4 pt-6 pb-3 space-y-4">
+          <section className="px-4 pt-6 pb-2">
             <motion.button
               initial={{ scale: 0.97, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1971,21 +1968,19 @@ const SessionPage = () => {
               </div>
               <ArrowRight className="w-5 h-5 relative" />
             </motion.button>
-
-            {renderSearchBar()}
           </section>
         )}
 
         {/* ─── STAGE: live but not joined ─── */}
         {stage === "live-not-joined" && (
-          <section className="px-4 pt-6 pb-3">
+          <section className="px-4 pt-6 pb-2">
             <motion.button
               initial={{ scale: 0.97, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={joinLive}
-              className="w-full p-5 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 text-white font-semibold flex items-center justify-between shadow-xl shadow-green-500/30 relative overflow-hidden group mb-4"
+              className="w-full p-5 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 text-white font-semibold flex items-center justify-between shadow-xl shadow-green-500/30 relative overflow-hidden group"
             >
               <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
               <div className="flex items-center gap-3 relative">
@@ -2001,14 +1996,12 @@ const SessionPage = () => {
               </div>
               <ArrowRight className="w-5 h-5 relative" />
             </motion.button>
-
-            {renderSearchBar()}
           </section>
         )}
 
-        {/* ─── STAGE: paused (break) — overrides other live stages ─── */}
+        {/* ─── STAGE: paused (break) ─── */}
         {stage === "paused" && (
-          <section className="px-4 pt-6 pb-3">
+          <section className="px-4 pt-6 pb-2">
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2030,13 +2023,12 @@ const SessionPage = () => {
           </section>
         )}
 
-        {/* ─── STAGE: live + joined (any voting phase) ─── */}
+        {/* ─── STAGE: live + joined ─── Now Playing card + voting banner */}
         {(stage === "live-playing" ||
           stage === "live-suggesting" ||
           stage === "live-voting" ||
           stage === "live-idle") && (
-          <section className="px-4 pt-4 pb-3 space-y-4">
-            {/* Now Playing — always at top when live */}
+          <section className="px-4 pt-4 pb-2 space-y-4">
             {currentSong && (
               <div className="p-4 rounded-2xl bg-gradient-to-br from-green-500/15 to-emerald-500/10 border border-green-500/30">
                 <div className="flex items-center gap-3">
@@ -2092,7 +2084,7 @@ const SessionPage = () => {
               </div>
             )}
 
-            {/* Voting phase banner — always shown when active */}
+            {/* Voting phase banner */}
             {votingPhase && timeRemaining > 0 && (
               <div
                 className={`p-4 rounded-2xl ${
@@ -2138,9 +2130,6 @@ const SessionPage = () => {
                 </div>
               </div>
             )}
-
-            {/* Suggestion phase: prioritise search */}
-            {stage === "live-suggesting" && renderSearchBar()}
 
             {/* Voting cards */}
             {suggestedSongs.length > 0 && (
@@ -2224,11 +2213,61 @@ const SessionPage = () => {
                 ))}
               </div>
             )}
+          </section>
+        )}
 
-            {/* Search bar when no voting phase active (or for live-playing) */}
-            {stage !== "live-suggesting" && canAddSongs && renderSearchBar()}
+        {/* ──────────────────────────────────────────────────────────────────
+            STABLE SEARCH INPUT — rendered at a single, fixed position in
+            the tree. Visibility controlled with CSS (`hidden`) rather than
+            conditional rendering, so the <input> DOM node never unmounts.
+            Hidden only when the stage genuinely shouldn't expose a search
+            UI (paused break, host has no songs yet handled by the empty
+            stage's hero which already includes a focus target above this).
 
-            {/* Leave Live — secondary, less prominent */}
+            The empty-stage hero renders ABOVE this; the search itself lives
+            here. This guarantees that typing → adding a song → stage
+            transition does not destroy the input or its focus state.
+           ──────────────────────────────────────────────────────────────── */}
+        {stage !== "paused" && stage !== "live-voting" && (
+          <section className="px-4 pt-2 pb-3">
+            {searchBlock}
+          </section>
+        )}
+
+        {/* Step indicator — only on empty stage, helps user see the whole arc */}
+        {stage === "empty" && (
+          <section className="px-4 pt-2 pb-3">
+            <div className="flex items-center gap-3 text-xs text-white/40 px-2">
+              <div className="flex items-center gap-2 text-purple-300">
+                <div className="w-6 h-6 rounded-full bg-purple-500/30 border border-purple-400/50 flex items-center justify-center font-bold">
+                  1
+                </div>
+                <span>Add songs</span>
+              </div>
+              <ArrowRight className="w-3 h-3" />
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-bold">
+                  2
+                </div>
+                <span>{isHost ? "Start session" : "Wait for host"}</span>
+              </div>
+              <ArrowRight className="w-3 h-3" />
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-bold">
+                  3
+                </div>
+                <span>Vote & listen</span>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Leave-live button — shown only in live + joined stages */}
+        {(stage === "live-playing" ||
+          stage === "live-suggesting" ||
+          stage === "live-voting" ||
+          stage === "live-idle") && (
+          <section className="px-4 py-2">
             <button
               onClick={leaveLive}
               className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:bg-white/10 hover:text-white/80 transition-colors flex items-center justify-center gap-2"
