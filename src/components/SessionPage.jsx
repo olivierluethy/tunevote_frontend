@@ -1683,7 +1683,7 @@ const SessionPage = () => {
   // meaningful lines.
   // ---------------------------------------------------------------------------
 
-  const SearchBar = ({ autoFocus = false, large = false }) => (
+  const renderSearchBar = ({ autoFocus = false, large = false } = {}) => (
     <div className="space-y-2">
       <div
         className={`relative flex items-center gap-2 ${
@@ -1899,7 +1899,7 @@ const SessionPage = () => {
               </p>
             </div>
 
-            <SearchBar autoFocus large />
+            {renderSearchBar({ autoFocus: true, large: true })}
 
             {/* Soft step indicator — reduces "what's next?" anxiety */}
             <div className="mt-8 px-2">
@@ -1943,7 +1943,7 @@ const SessionPage = () => {
                 </p>
               </div>
             </div>
-            <SearchBar />
+            {renderSearchBar()}
           </section>
         )}
 
@@ -1972,7 +1972,7 @@ const SessionPage = () => {
               <ArrowRight className="w-5 h-5 relative" />
             </motion.button>
 
-            <SearchBar />
+            {renderSearchBar()}
           </section>
         )}
 
@@ -2002,7 +2002,7 @@ const SessionPage = () => {
               <ArrowRight className="w-5 h-5 relative" />
             </motion.button>
 
-            <SearchBar />
+            {renderSearchBar()}
           </section>
         )}
 
@@ -2140,7 +2140,7 @@ const SessionPage = () => {
             )}
 
             {/* Suggestion phase: prioritise search */}
-            {stage === "live-suggesting" && <SearchBar />}
+            {stage === "live-suggesting" && renderSearchBar()}
 
             {/* Voting cards */}
             {suggestedSongs.length > 0 && (
@@ -2226,7 +2226,7 @@ const SessionPage = () => {
             )}
 
             {/* Search bar when no voting phase active (or for live-playing) */}
-            {stage !== "live-suggesting" && canAddSongs && <SearchBar />}
+            {stage !== "live-suggesting" && canAddSongs && renderSearchBar()}
 
             {/* Leave Live — secondary, less prominent */}
             <button
