@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { usePlayback } from "../context/PlaybackContext";
+import BreakModal from "./session/BreakModal";
+import ParticipantsModal from "./session/ParticipantsModal";
+import QrModal from "./session/QrModal";
+import EditNameModal from "./session/EditNameModal";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import unidecode from "unidecode";
@@ -332,6 +336,25 @@ const SessionPage = () => {
       setInviteStatus("error");
       setTimeout(() => setInviteStatus(""), 4000);
       trackEvent("invite_failed", { session_id: sessionId });
+    }
+  };
+
+  const handleRemoveInvite = async (invite) => {
+    if (!confirm(`Remove "${invite.invitee_name || invite.invitee_email}"?`))
+      return;
+
+    setRemovingUserId(invite.id);
+    try {
+      await axios.delete(
+        `https://api.tunevote.com/sessions/${sessionId}/invites/${invite.id}`,
+        { headers: getAuthHeaders() }
+      );
+      setAcceptedInvites((prev) => prev.filter((i) => i.id !== invite.id));
+    } catch (err) {
+      console.error(err);
+      alert("Error removing participant");
+    } finally {
+      setRemovingUserId(null);
     }
   };
 
@@ -1782,338 +1805,49 @@ const SessionPage = () => {
       {/* ──────────────────────────────────────────────────────────────────────
           BREAK MODAL — extracted from the search panel.
          ──────────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showBreakModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowBreakModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 16 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 mb-5">
-                <div className="p-2 rounded-xl bg-amber-500/20">
-                  <Timer className="w-5 h-5 text-amber-300" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Add a break</h3>
-                  <p className="text-xs text-white/50">
-                    Pauses the music for a set time
-                  </p>
-                </div>
-              </div>
-
-              <label className="block text-xs text-white/60 mb-1">Label</label>
-              <input
-                type="text"
-                value={pauseDescription}
-                onChange={(e) => setPauseDescription(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/30 focus:border-purple-400 focus:outline-none mb-3"
-                placeholder="e.g. Short break, Toast, Speech"
-              />
-
-              <label className="block text-xs text-white/60 mb-1">
-                Duration (seconds)
-              </label>
-              <div className="flex gap-2 mb-5">
-                {[15, 30, 60, 120].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setPauseDuration(d)}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
-                      pauseDuration === d
-                        ? "bg-amber-500/20 border border-amber-400/50 text-amber-200"
-                        : "bg-white/5 border border-white/10 text-white/60"
-                    }`}
-                  >
-                    {d}s
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowBreakModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 font-medium text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addBreak}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white font-medium text-sm"
-                >
-                  Add break
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <BreakModal
+        open={showBreakModal}
+        onClose={() => setShowBreakModal(false)}
+        pauseDescription={pauseDescription}
+        setPauseDescription={setPauseDescription}
+        pauseDuration={pauseDuration}
+        setPauseDuration={setPauseDuration}
+        onAddBreak={addBreak}
+      />
 
       {/* ──────────────────────────────────────────────────────────────────────
           PARTICIPANTS MODAL — moved out of the inline section so the main
           flow doesn't get cluttered.
          ──────────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showParticipantsModal && session?.is_private === 1 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
-            onClick={() => setShowParticipantsModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 16 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-white/10 shadow-2xl max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-purple-400" />
-                  <h3 className="font-semibold">Participants</h3>
-                  <span className="text-xs text-white/50">
-                    ({liveParticipants.length} live)
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowParticipantsModal(false)}
-                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      <ParticipantsModal
+        open={showParticipantsModal && session?.is_private === 1}
+        onClose={() => setShowParticipantsModal(false)}
+        liveParticipants={liveParticipants}
+        isHost={isHost}
+        inviteEmail={inviteEmail}
+        setInviteEmail={setInviteEmail}
+        onSendInvite={sendInvite}
+        inviteStatus={inviteStatus}
+        acceptedInvites={acceptedInvites}
+        onRemoveInvite={handleRemoveInvite}
+        removingUserId={removingUserId}
+      />
 
-              {liveParticipants.length > 0 && (
-                <div className="space-y-1.5 mb-4">
-                  {liveParticipants.map((p, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 p-2 rounded-xl bg-white/5"
-                    >
-                      <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold">
-                        {p.profileImage ? (
-                          <img
-                            src={p.profileImage}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          p.name?.[0]?.toUpperCase() || "?"
-                        )}
-                      </div>
-                      <span className="flex-1 text-sm font-medium">{p.name}</span>
-                      {p.isHost && <Crown className="w-4 h-4 text-yellow-400" />}
-                    </div>
-                  ))}
-                </div>
-              )}
+      <QrModal
+        open={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title={session.title}
+        onShare={handleShare}
+      />
 
-              {isHost && (
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 mb-3">
-                  <p className="text-xs text-white/60 mb-2 font-medium">
-                    Invite someone
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      placeholder="email@example.com"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && sendInvite()}
-                      className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm placeholder-white/30"
-                    />
-                    <button
-                      onClick={sendInvite}
-                      disabled={!inviteEmail.trim()}
-                      className="px-4 py-2 rounded-lg bg-purple-500 text-white font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </div>
-                  {inviteStatus === "success" && (
-                    <p className="text-xs text-green-400 mt-2">
-                      Invitation sent!
-                    </p>
-                  )}
-                  {inviteStatus === "error" && (
-                    <p className="text-xs text-red-400 mt-2">
-                      Invalid email or error.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {isHost && acceptedInvites.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs text-white/50 px-1">Members</p>
-                  {acceptedInvites.map((invite) => (
-                    <div
-                      key={invite.id}
-                      className="flex items-center gap-3 p-2 rounded-xl bg-white/5"
-                    >
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold">
-                        {invite.imageData ? (
-                          <img
-                            src={invite.imageData}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          invite.invitee_name?.[0]?.toUpperCase() ||
-                          invite.invitee_email?.[0]?.toUpperCase()
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {invite.invitee_name || "Unknown"}
-                        </p>
-                        <p className="text-xs text-white/40 truncate">
-                          {invite.invitee_email}
-                        </p>
-                      </div>
-                      <button
-                        onClick={async () => {
-                          if (
-                            !confirm(
-                              `Remove "${invite.invitee_name || invite.invitee_email}"?`
-                            )
-                          )
-                            return;
-
-                          setRemovingUserId(invite.id);
-                          try {
-                            await axios.delete(
-                              `https://api.tunevote.com/sessions/${sessionId}/invites/${invite.id}`,
-                              { headers: getAuthHeaders() }
-                            );
-                            setAcceptedInvites((prev) =>
-                              prev.filter((i) => i.id !== invite.id)
-                            );
-                          } catch (err) {
-                            console.error(err);
-                            alert("Error removing participant");
-                          } finally {
-                            setRemovingUserId(null);
-                          }
-                        }}
-                        disabled={removingUserId === invite.id}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
-                      >
-                        <UserMinus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* QR Modal */}
-      <AnimatePresence>
-        {qrModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setQrModalOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Scan to Join</h3>
-                <button
-                  onClick={() => setQrModalOpen(false)}
-                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <p className="text-sm text-white/60 mb-4 truncate">{session.title}</p>
-
-              <div className="bg-white p-4 rounded-2xl inline-block mb-4">
-                <QRCodeCanvas value={window.location.href} size={200} level="H" />
-              </div>
-
-              <button
-                onClick={() => {
-                  handleShare();
-                  setQrModalOpen(false);
-                }}
-                className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-purple-500/25 transition-all"
-              >
-                <Share2 className="w-4 h-4" />
-                Share Link
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit Name Modal */}
-      <AnimatePresence>
-        {isEditingName && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setIsEditingName(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="font-semibold mb-4">Edit Session Name</h3>
-              <input
-                type="text"
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveSessionName()}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-purple-400 focus:outline-none mb-4"
-                autoFocus
-              />
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setIsEditingName(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 font-medium text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveSessionName}
-                  disabled={savingName || !editingName.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 font-medium text-sm disabled:opacity-50"
-                >
-                  {savingName ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <EditNameModal
+        open={isEditingName}
+        onClose={() => setIsEditingName(false)}
+        editingName={editingName}
+        setEditingName={setEditingName}
+        onSave={saveSessionName}
+        saving={savingName}
+      />
     </div>
   );
 };
