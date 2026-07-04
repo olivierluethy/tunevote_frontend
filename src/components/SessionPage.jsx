@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { usePlayback } from "../context/PlaybackContext";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import unidecode from "unidecode";
@@ -53,29 +54,32 @@ const SessionPage = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
 
-  const playerRef = useRef(null);
+  // Playback (player, current song, volume, mute, voting, breaks) is owned by
+  // the global PlaybackProvider so it survives navigation. SessionPage reads
+  // that state and delegates player control to it.
+  const {
+    currentSong,
+    volume,
+    isMutedForMe,
+    votingPhase,
+    timeRemaining,
+    isPaused,
+    pauseRemaining,
+    pauseTitle,
+    activeSessionId,
+    joinLive: pbJoinLive,
+    leaveLive: pbLeaveLive,
+    setVolume: pbSetVolume,
+    toggleMute: pbToggleMute,
+  } = usePlayback();
+  const isLiveJoined = activeSessionId === sessionId;
+
   const socketRef = useRef(null);
-  const syncIntervalRef = useRef(null);
   const searchInputRef = useRef(null);
-
-  // Refs that mirror state for use inside socket-driven callbacks.
-  const queueRef = useRef([]);
-  const mutedRef = useRef(false);
-  const currentSongRef = useRef(null);
-
-  const currentVideoIdRef = useRef(null);
-  const metaCacheRef = useRef(new Map());
-
-  const autoplayProbeRef = useRef(null);
-  const pendingPlayRef = useRef(null);
-  const MAX_PLAY_ATTEMPTS = 5;
-
-  const togglePersonalMuteRef = useRef(null);
 
   const [session, setSession] = useState(null);
   const [proposals, setProposals] = useState([]);
   const [queue, setQueue] = useState([]);
-  const [currentSong, setCurrentSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [pauseDuration, setPauseDuration] = useState(30);
@@ -87,28 +91,13 @@ const SessionPage = () => {
   const [acceptedInvites, setAcceptedInvites] = useState([]);
   const [removingUserId, setRemovingUserId] = useState(null);
 
-  const [votingPhase, setVotingPhase] = useState(null);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [videoCache, setVideoCache] = useState([]);
   const searchDebounceRef = useRef(null);
 
-  const [isPaused, setIsPaused] = useState(false);
-  const [pauseRemaining, setPauseRemaining] = useState(0);
-  const [pauseTitle, setPauseTitle] = useState("");
-  const pauseTimerRef = useRef(null);
-
   const [isHost, setIsHost] = useState(false);
   const [showGuestModal, setShowGuestModal] = useState(false);
-  const [volume, setVolume] = useState(50);
-  const [isMutedForMe, setIsMutedForMe] = useState(() => {
-    const initial = localStorage.getItem(`mute_${sessionId}`) === "true";
-    mutedRef.current = initial;
-    return initial;
-  });
-  const [isLiveJoined, setIsLiveJoined] = useState(false);
   const [sessionLive, setSessionLive] = useState(false);
 
   const [recommendations, setRecommendations] = useState([]);
@@ -245,34 +234,6 @@ const SessionPage = () => {
     };
   };
 
-  const loadCurrentVotingPhase = useCallback(async () => {
-    if (!sessionLive) return;
-
-    try {
-      const res = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/current-phase`,
-        { headers: getAuthHeaders() }
-      );
-
-      if (res.data && res.data.phase && res.data.endsAt) {
-        setVotingPhase({
-          phase: res.data.phase,
-          endsAt: new Date(res.data.endsAt).getTime(),
-          duration: res.data.duration || 90,
-          roundId: res.data.roundId,
-        });
-
-        const remaining = Math.max(
-          0,
-          Math.floor((new Date(res.data.endsAt).getTime() - Date.now()) / 1000)
-        );
-        setTimeRemaining(remaining);
-      }
-    } catch (err) {
-      console.warn("Could not load current phase", err.response?.status);
-    }
-  }, [sessionId, sessionLive]);
-
   const saveSessionName = async () => {
     const newName = editingName.trim();
     if (!newName || newName === session.title) {
@@ -395,113 +356,6 @@ const SessionPage = () => {
     return guestToken;
   };
 
-  // Mirror state into refs so socket-driven callbacks read fresh values.
-  useEffect(() => {
-    queueRef.current = queue;
-  }, [queue]);
-  useEffect(() => {
-    mutedRef.current = isMutedForMe;
-  }, [isMutedForMe]);
-  useEffect(() => {
-    currentSongRef.current = currentSong;
-  }, [currentSong]);
-
-  // ===========================================================================
-  // Media Session API integration (unchanged from previous implementation —
-  // see original file for the platform-by-platform behaviour notes).
-  // ===========================================================================
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    if (!currentSong || !currentSong.videoId) {
-      try {
-        navigator.mediaSession.metadata = null;
-      } catch {
-        /* older browsers — ignore */
-      }
-      return;
-    }
-    if (PLACEHOLDER_TITLES.has(currentSong.title)) return;
-
-    try {
-      navigator.mediaSession.metadata = new window.MediaMetadata({
-        title: currentSong.title,
-        artist: session?.title || "TuneVote",
-        album: "TuneVote",
-        artwork: currentSong.thumbnail
-          ? [
-              {
-                src: currentSong.thumbnail,
-                sizes: "512x512",
-                type: "image/jpeg",
-              },
-            ]
-          : [],
-      });
-    } catch (err) {
-      console.warn("[mediaSession] metadata update failed:", err);
-    }
-  }, [currentSong, session?.title]);
-
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    const inSilence = isMutedForMe || isPaused;
-    navigator.mediaSession.playbackState = inSilence ? "paused" : "playing";
-  }, [isMutedForMe, isPaused]);
-
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    const handlePlay = () => {
-      if (mutedRef.current) togglePersonalMuteRef.current?.();
-    };
-    const handlePause = () => {
-      if (!mutedRef.current) togglePersonalMuteRef.current?.();
-    };
-    try {
-      navigator.mediaSession.setActionHandler("play", handlePlay);
-      navigator.mediaSession.setActionHandler("pause", handlePause);
-    } catch (err) {
-      console.warn("[mediaSession] setActionHandler failed:", err);
-    }
-    return () => {
-      try {
-        navigator.mediaSession.setActionHandler("play", null);
-        navigator.mediaSession.setActionHandler("pause", null);
-      } catch {
-        /* older browsers — fine to ignore */
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const onVisibility = async () => {
-      if (document.visibilityState !== "visible") return;
-      if (!isLiveJoined) return;
-
-      attemptPlay("visibility");
-      await new Promise((r) => setTimeout(r, 150));
-
-      try {
-        const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
-          { headers: getAuthHeaders() }
-        );
-        if (data?.current_video_id && data.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
-          const current = playerRef.current?.getCurrentTime?.() || 0;
-          if (Math.abs(current - elapsed) > 2) {
-            playerRef.current?.seekTo(elapsed, true);
-          }
-        }
-      } catch (err) {
-        console.warn("[visibility resync] failed:", err.message);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [isLiveJoined, sessionId]);
-
   const loadSessionData = useCallback(async () => {
     try {
       const [sessRes, queueRes] = await Promise.all([
@@ -520,10 +374,6 @@ const SessionPage = () => {
 
       if (sessRes.data.is_private) {
         loadLiveParticipants();
-      }
-
-      if (sessRes.data.is_live) {
-        loadCurrentVotingPhase();
       }
 
       if (sessRes.data.is_private === 1) {
@@ -561,75 +411,6 @@ const SessionPage = () => {
       console.error("Failed to load live participants:", err);
     }
   }, [sessionId, session?.is_private]);
-
-  useEffect(() => {
-    if (!socketRef.current) return;
-
-    const handler = (data) => {
-      setVotingPhase({
-        phase: data.phase,
-        endsAt: data.endsAt,
-        duration: data.duration || (data.phase === "suggestion" ? 90 : 60),
-        roundId: data.roundId,
-      });
-      const remaining = Math.max(
-        0,
-        Math.floor((data.endsAt - Date.now()) / 1000)
-      );
-      setTimeRemaining(remaining);
-    };
-
-    socketRef.current.on("voting_phase_changed", handler);
-
-    return () => {
-      socketRef.current?.off("voting_phase_changed", handler);
-    };
-  }, [socketRef.current]);
-
-  useEffect(() => {
-    if (!socketRef.current) return;
-
-    const onConnect = () => {
-      loadCurrentVotingPhase();
-    };
-
-    socketRef.current.on("connect", onConnect);
-
-    return () => {
-      socketRef.current?.off("connect", onConnect);
-    };
-  }, [socketRef.current, loadCurrentVotingPhase]);
-
-  useEffect(() => {
-    if (!votingPhase) {
-      setTimeRemaining(0);
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        const now = Date.now();
-        const remaining = Math.max(
-          0,
-          Math.floor((votingPhase.endsAt - now) / 1000)
-        );
-
-        if (remaining <= 0) {
-          clearInterval(timer);
-          if (
-            votingPhase.phase === "suggestion" ||
-            votingPhase.phase === "voting"
-          ) {
-            setVotingPhase(null);
-          }
-          return 0;
-        }
-        return remaining;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [votingPhase]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -696,72 +477,21 @@ const SessionPage = () => {
     socketRef.current.on("proposals_updated", () => {
       loadProposals();
     });
-    socketRef.current.on("session_started", (data) => {
+    // Playback (song sync, breaks, voting phase, live audio) is handled by the
+    // global PlaybackProvider so it continues across navigation. Here we only
+    // refresh the detail UI's session data.
+    socketRef.current.on("session_started", () => {
       setSessionLive(true);
       loadSessionData();
-      loadCurrentVotingPhase();
-      if (isLiveJoined && data.firstVideoId) {
-        syncPlayback({
-          current_video_id: data.firstVideoId,
-          video_start_time: data.video_start_time,
-          is_playing: true,
-        });
-      }
-    });
-
-    socketRef.current.on("playback_sync", (data) => {
-      if (!isLiveJoined) return;
-      syncPlayback(data);
     });
 
     socketRef.current.on("live_participants_updated", (participants) => {
       setLiveParticipants(participants);
     });
 
-    socketRef.current.on("session_ended", ({ message }) => {
-      alert(message);
-      setIsLiveJoined(false);
-      setCurrentSong(null);
+    socketRef.current.on("session_ended", () => {
       setSessionLive(false);
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-      if (playerRef.current) {
-        playerRef.current.stopVideo();
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
       loadSessionData();
-    });
-
-    socketRef.current.on("pause_started", ({ title, duration, startTime }) => {
-      setIsPaused(true);
-      setPauseTitle(title);
-      setPauseRemaining(duration);
-
-      if (playerRef.current) {
-        playerRef.current.pauseVideo();
-      }
-
-      if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
-      pauseTimerRef.current = setInterval(() => {
-        setPauseRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(pauseTimerRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    });
-
-    socketRef.current.on("pause_ended", ({ title }) => {
-      setIsPaused(false);
-      setPauseRemaining(0);
-      setPauseTitle("");
-
-      if (pauseTimerRef.current) clearInterval(pauseTimerRef.current);
-      if (playerRef.current) {
-        playerRef.current.playVideo();
-      }
     });
 
     if (isHost && sessionId) {
@@ -785,26 +515,7 @@ const SessionPage = () => {
       socketRef.current.off("invite:accepted", handleInviteAccepted);
       socketRef.current.disconnect();
     };
-  }, [sessionId, token, guestToken, isHost, loadSessionData, isLiveJoined]);
-
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://www.youtube.com/iframe_api";
-    document.body.appendChild(script);
-
-    window.onYouTubeIframeAPIReady = () => {
-      console.log("YouTube API ready");
-    };
-
-    return () => {
-      if (playerRef.current) playerRef.current.destroy();
-      if (autoplayProbeRef.current) {
-        clearTimeout(autoplayProbeRef.current);
-        autoplayProbeRef.current = null;
-      }
-      pendingPlayRef.current = null;
-    };
-  }, []);
+  }, [sessionId, token, guestToken, isHost, loadSessionData]);
 
   const loadCache = useCallback(async () => {
     try {
@@ -1118,327 +829,29 @@ const SessionPage = () => {
     }, 300);
   }, [searchQuery, videoCache, sessionLive, isLiveJoined, sessionId, loadCache]);
 
-  const attemptPlay = (trigger) => {
-    const pending = pendingPlayRef.current;
-    if (!pending) return false;
-    if (pending.attempts >= MAX_PLAY_ATTEMPTS) return false;
-    const player = playerRef.current;
-    if (!player) return false;
-
-    let currentVid = null;
-    try {
-      currentVid = player.getVideoData?.()?.video_id || null;
-    } catch {
-      /* getVideoData throws before player is fully ready — treat as unknown */
-    }
-    if (currentVid && currentVid !== pending.videoId) {
-      pendingPlayRef.current = null;
-      return false;
-    }
-
-    let state = null;
-    try {
-      state = player.getPlayerState?.();
-    } catch {
-      /* state may be unavailable pre-onReady */
-    }
-    if (state === 1 /* PLAYING */) {
-      pendingPlayRef.current = null;
-      return false;
-    }
-
-    pending.attempts += 1;
-    pending.lastTrigger = trigger;
-    if (pending.attempts > 1) {
-      console.warn(
-        `[autoplay] retry attempt ${pending.attempts}/${MAX_PLAY_ATTEMPTS} ` +
-          `via ${trigger} (state=${state}, hidden=${document.hidden}, ` +
-          `videoId=${pending.videoId})`
-      );
-    }
-    try {
-      player.playVideo();
-    } catch (err) {
-      console.warn(
-        `[autoplay] playVideo() threw during ${trigger} attempt:`,
-        err?.message || err
-      );
-    }
-    return true;
-  };
-
-  const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
-    if (playerRef.current) {
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-
-    if (autoplayProbeRef.current) {
-      clearTimeout(autoplayProbeRef.current);
-      autoplayProbeRef.current = null;
-    }
-
-    pendingPlayRef.current = shouldPlay
-      ? { videoId, attempts: 0, lastTrigger: null }
-      : null;
-
-    playerRef.current = new window.YT.Player("youtube-player", {
-      height: 0,
-      width: 0,
-      videoId,
-      playerVars: {
-        start: Math.floor(startSeconds),
-        autoplay: 0,
-        controls: 0,
-        modestbranding: 1,
-        rel: 0,
-        fs: 0,
-        playsinline: 1,
-      },
-      events: {
-        onReady: () => {
-          if (mutedRef.current) {
-            playerRef.current.mute();
-          } else {
-            playerRef.current.unMute();
-            playerRef.current.setVolume(volume);
-          }
-
-          playerRef.current.seekTo(startSeconds, true);
-
-          if (shouldPlay) {
-            attemptPlay("initial");
-
-            const probeStart = Date.now();
-            autoplayProbeRef.current = setTimeout(() => {
-              autoplayProbeRef.current = null;
-              const state = playerRef.current?.getPlayerState?.();
-              if (state === 1 /* PLAYING */) return;
-              console.warn(
-                `[autoplay] probe: state=${state} after ` +
-                  `${Date.now() - probeStart}ms (hidden=${document.hidden}). ` +
-                  `Issuing one retry; further attempts will come from ` +
-                  `onStateChange or visibility return.`
-              );
-              attemptPlay("probe");
-            }, 2000);
-          }
-        },
-        onStateChange: (e) => {
-          if (e.data === 1 /* PLAYING */) {
-            if (autoplayProbeRef.current) {
-              clearTimeout(autoplayProbeRef.current);
-              autoplayProbeRef.current = null;
-            }
-            const pending = pendingPlayRef.current;
-            if (pending && pending.videoId === videoId) {
-              if (pending.attempts > 1) {
-                console.log(
-                  `[autoplay] recovered after ${pending.attempts} attempts ` +
-                    `(last trigger: ${pending.lastTrigger}), video ${pending.videoId}`
-                );
-              }
-              pendingPlayRef.current = null;
-            }
-          }
-        },
-        onError: (e) => {
-          console.warn(
-            `[autoplay] YT player error (code=${e?.data}) for video ` +
-              `${videoId}; abandoning retries.`
-          );
-          if (pendingPlayRef.current?.videoId === videoId) {
-            pendingPlayRef.current = null;
-          }
-          if (autoplayProbeRef.current) {
-            clearTimeout(autoplayProbeRef.current);
-            autoplayProbeRef.current = null;
-          }
-        },
-      },
-    });
-  };
-
-  const PLACEHOLDER_TITLES = new Set(["", "Unknown", "Loading…"]);
-
-  const fetchAndApplyMetadata = async (videoId) => {
-    if (metaCacheRef.current.has(videoId)) {
-      const cached = metaCacheRef.current.get(videoId);
-      setCurrentSong((prev) =>
-        prev && prev.videoId === videoId
-          ? { ...prev, title: cached.title, thumbnail: cached.thumbnail }
-          : prev
-      );
-      return;
-    }
-    try {
-      const res = await axios.get(
-        `https://api.tunevote.com/youtube-info/${videoId}`
-      );
-      const title = res.data?.snippet?.title;
-      const thumbnail =
-        res.data?.snippet?.thumbnails?.medium?.url ||
-        res.data?.snippet?.thumbnails?.default?.url ||
-        "";
-      if (!title) return;
-
-      metaCacheRef.current.set(videoId, { title, thumbnail });
-
-      if (currentVideoIdRef.current !== videoId) return;
-      const ytData = playerRef.current?.getVideoData?.();
-      if (ytData?.video_id && ytData.video_id !== videoId) return;
-
-      setCurrentSong((prev) =>
-        prev && prev.videoId === videoId
-          ? { ...prev, title, thumbnail }
-          : prev
-      );
-    } catch (err) {
-      console.warn(
-        "[metadata fallback] /youtube-info failed for",
-        videoId,
-        err.message
-      );
-    }
-  };
-
-  const syncPlayback = ({
-    current_queue_item_id,
-    current_video_id,
-    video_start_time,
-    is_playing,
-  }) => {
-    if (!current_video_id || !video_start_time) return;
-
-    currentVideoIdRef.current = current_video_id;
-
-    const localQueue = queueRef.current;
-    const item =
-      localQueue.find((i) => i.id === current_queue_item_id) ||
-      localQueue.find((i) => i.video_id === current_video_id);
-
-    const elapsed = (Date.now() - video_start_time) / 1000;
-    const progress = Math.max(0, elapsed);
-
-    const cachedMeta = metaCacheRef.current.get(current_video_id);
-    const prevSong = currentSongRef.current;
-    const prevHasValidForSameVideo =
-      prevSong?.videoId === current_video_id &&
-      prevSong?.title &&
-      !PLACEHOLDER_TITLES.has(prevSong.title);
-
-    let resolvedTitle = item?.title || cachedMeta?.title || null;
-    let resolvedThumb = item?.thumbnail || cachedMeta?.thumbnail || "";
-    if (!resolvedTitle && prevHasValidForSameVideo) {
-      resolvedTitle = prevSong.title;
-      resolvedThumb = prevSong.thumbnail || resolvedThumb;
-    }
-
-    if (resolvedTitle && !cachedMeta) {
-      metaCacheRef.current.set(current_video_id, {
-        title: resolvedTitle,
-        thumbnail: resolvedThumb,
-      });
-    }
-
-    setCurrentSong({
-      queueItemId: current_queue_item_id || item?.id,
-      videoId: current_video_id,
-      title: resolvedTitle || "Loading…",
-      thumbnail: resolvedThumb,
-    });
-
-    createPlayer(current_video_id, progress, is_playing);
-
-    if (!resolvedTitle) {
-      fetchAndApplyMetadata(current_video_id);
-    }
-  };
+  // --- Playback control now lives in the global PlaybackProvider ------------
+  // These thin wrappers delegate to it while keeping the existing call sites
+  // (join button, leave button, volume slider, mute toggle) unchanged. The
+  // player, live socket, sync loop and voting/break state all live there so
+  // audio keeps going when this screen unmounts.
 
   const joinLive = async () => {
     if (!sessionLive || isLiveJoined) return;
     trackEvent("join_live_clicked", { session_id: sessionId });
-    setIsLiveJoined(true);
-    loadLiveParticipants();
-
-    try {
-      if (isGuest) {
-        await ensureGuestToken();
-      }
-
-      await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/join-live`,
-        {},
-        { headers: getAuthHeaders() }
-      );
-
-      const { data } = await axios.get(
-        `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
-        { headers: getAuthHeaders() }
-      );
-
-      if (data.current_video_id && data.video_start_time) {
-        syncPlayback(data);
-      }
-    } catch (err) {
-      console.error("Join Live failed", err);
-      setIsLiveJoined(false);
-      alert("Error joining live session");
-      return;
+    if (isGuest) {
+      await ensureGuestToken();
     }
-
-    syncIntervalRef.current = setInterval(async () => {
-      if (!isLiveJoined) return;
-      try {
-        const { data } = await axios.get(
-          `https://api.tunevote.com/sessions/${sessionId}/playback-sync`,
-          { headers: getAuthHeaders() }
-        );
-
-        if (data.current_video_id && data.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
-          const current = playerRef.current?.getCurrentTime() || 0;
-          if (Math.abs(current - elapsed) > 2) {
-            playerRef.current?.seekTo(elapsed, true);
-          }
-        }
-      } catch (e) {
-        console.warn("Sync failed:", e.message);
-      }
-    }, 10000);
+    await pbJoinLive({ sessionId, sessionName: session?.title });
+    loadLiveParticipants();
   };
 
   const leaveLive = async () => {
-    setIsLiveJoined(false);
-    setCurrentSong(null);
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    if (playerRef.current) {
-      playerRef.current.pauseVideo();
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-
-    try {
-      await axios.post(
-        `https://api.tunevote.com/sessions/${sessionId}/leave-live`,
-        {},
-        { headers: getAuthHeaders() }
-      );
-    } catch (err) {
-      console.error("Leave failed", err);
-    } finally {
-      loadLiveParticipants();
-      await loadSessionData();
-    }
+    await pbLeaveLive();
+    loadLiveParticipants();
+    await loadSessionData();
   };
 
   const startSession = async () => {
-    if (playerRef.current) {
-      playerRef.current.stopVideo();
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-
     try {
       await axios.post(`https://api.tunevote.com/sessions/${sessionId}/start`);
       loadSessionData();
@@ -1451,25 +864,12 @@ const SessionPage = () => {
   };
 
   const handleVolumeChange = (e) => {
-    const vol = parseInt(e.target.value);
-    setVolume(vol);
-    playerRef.current?.setVolume(isMutedForMe ? 0 : vol);
+    pbSetVolume(parseInt(e.target.value));
   };
 
   const togglePersonalMute = () => {
-    const next = !isMutedForMe;
-    mutedRef.current = next;
-    setIsMutedForMe(next);
-    localStorage.setItem(`mute_${sessionId}`, next);
-    if (next) {
-      playerRef.current?.mute();
-    } else {
-      playerRef.current?.unMute();
-      playerRef.current?.setVolume(volume);
-    }
+    pbToggleMute();
   };
-
-  togglePersonalMuteRef.current = togglePersonalMute;
 
   const normalize = (str) => {
     if (!str) return "";
@@ -2375,13 +1775,8 @@ const SessionPage = () => {
           </section>
         )}
 
-        {/* Hidden YouTube Player */}
-        {isLiveJoined && (
-          <div
-            id="youtube-player"
-            style={{ width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
-          ></div>
-        )}
+        {/* The hidden YouTube player is rendered once at the app root by
+            PlaybackProvider so audio survives navigation. */}
       </main>
 
       {/* ──────────────────────────────────────────────────────────────────────

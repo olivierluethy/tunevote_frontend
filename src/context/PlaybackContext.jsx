@@ -7,6 +7,7 @@ import {
   useCallback,
 } from "react";
 import axios from "axios";
+import io from "socket.io-client";
 
 // ---------------------------------------------------------------------------
 // GLOBAL PLAYBACK PROVIDER
@@ -381,10 +382,7 @@ export const PlaybackProvider = ({ children }) => {
   }, []);
 
   // === Live-playback socket for the active session =========================
-  const connectSocket = async (sessionId) => {
-    // Dynamic import keeps socket.io out of the initial bundle path here and
-    // matches how SessionPage imports it.
-    const { default: io } = await import("socket.io-client");
+  const connectSocket = (sessionId) => {
     const token = localStorage.getItem("token");
     const guestToken = localStorage.getItem("guestToken");
 
@@ -491,7 +489,7 @@ export const PlaybackProvider = ({ children }) => {
       activeRef.current = { sessionId, sessionName };
 
       seedMetaFromQueue(sessionId);
-      await connectSocket(sessionId);
+      connectSocket(sessionId);
 
       try {
         await axios.post(
