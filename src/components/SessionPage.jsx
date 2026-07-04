@@ -7,6 +7,8 @@ import ParticipantsModal from "./session/ParticipantsModal";
 import QrModal from "./session/QrModal";
 import EditNameModal from "./session/EditNameModal";
 import SessionHeader from "./session/SessionHeader";
+import NowPlayingCard from "./session/NowPlayingCard";
+import VotingBanner from "./session/VotingBanner";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import unidecode from "unidecode";
@@ -1394,107 +1396,18 @@ const SessionPage = () => {
           stage === "live-voting" ||
           stage === "live-idle") && (
           <section className="px-4 pt-4 pb-2 space-y-4">
-            {currentSong && (
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-green-500/15 to-emerald-500/10 border border-green-500/30">
-                <div className="flex items-center gap-3">
-                  <div className="relative shrink-0">
-                    <img
-                      src={currentSong.thumbnail}
-                      alt=""
-                      className="w-14 h-14 rounded-xl object-cover"
-                    />
-                    <div className="absolute inset-0 rounded-xl bg-black/30 flex items-center justify-center">
-                      <motion.div
-                        animate={{ scale: [1, 1.15, 1] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        className="w-2 h-2 bg-green-400 rounded-full"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-green-400 font-medium uppercase tracking-wider mb-0.5">
-                      Now playing
-                    </p>
-                    <p className="font-semibold truncate">{currentSong.title}</p>
-                  </div>
-                  <button
-                    onClick={togglePersonalMute}
-                    className={`p-2.5 rounded-xl transition-colors shrink-0 ${
-                      isMutedForMe
-                        ? "bg-red-500/20 text-red-400"
-                        : "bg-white/10 hover:bg-white/15"
-                    }`}
-                    title={isMutedForMe ? "Unmute for me" : "Mute for me"}
-                  >
-                    {isMutedForMe ? (
-                      <VolumeX className="w-5 h-5" />
-                    ) : (
-                      <Volume2 className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-                {!isMutedForMe && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={volume}
-                      onChange={handleVolumeChange}
-                      className="flex-1 h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                    />
-                    <span className="text-xs text-white/50 w-8 text-right">{volume}%</span>
-                  </div>
-                )}
-              </div>
-            )}
+            <NowPlayingCard
+              currentSong={currentSong}
+              isMutedForMe={isMutedForMe}
+              volume={volume}
+              onToggleMute={togglePersonalMute}
+              onVolumeChange={handleVolumeChange}
+            />
 
-            {/* Voting phase banner */}
-            {votingPhase && timeRemaining > 0 && (
-              <div
-                className={`p-4 rounded-2xl ${
-                  votingPhase.phase === "suggestion"
-                    ? "bg-gradient-to-r from-emerald-500/15 to-green-500/10 border border-emerald-500/30"
-                    : "bg-gradient-to-r from-orange-500/15 to-amber-500/10 border border-orange-500/30"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wider font-medium opacity-70">
-                      {votingPhase.phase === "suggestion"
-                        ? "Suggesting phase"
-                        : "Voting phase"}
-                    </p>
-                    <p className="font-semibold text-sm">
-                      {votingPhase.phase === "suggestion"
-                        ? "Add the songs you want to hear next"
-                        : "Pick your favourites — top votes get played"}
-                    </p>
-                  </div>
-                  <span className="text-2xl font-mono font-bold tabular-nums">
-                    {formatTime(timeRemaining)}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div
-                    className={`h-full ${
-                      votingPhase.phase === "suggestion"
-                        ? "bg-emerald-400"
-                        : "bg-orange-400"
-                    }`}
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: `${
-                        ((votingPhase.duration - timeRemaining) /
-                          votingPhase.duration) *
-                        100
-                      }%`,
-                    }}
-                    transition={{ duration: 1, ease: "linear" }}
-                  />
-                </div>
-              </div>
-            )}
+            <VotingBanner
+              votingPhase={votingPhase}
+              timeRemaining={timeRemaining}
+            />
 
             {/* Voting cards */}
             {suggestedSongs.length > 0 && (
