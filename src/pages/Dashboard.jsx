@@ -384,8 +384,8 @@ export default function Dashboard() {
   const pendingInvites = receivedInvites.filter(
     (i) => !i.accepted_at && !i.revoked_at
   );
-  const liveSessions = sessions.filter((s) => s.is_live === 1);
-  const nonLiveSessions = sessions.filter((s) => s.is_live !== 1);
+  const liveSessions = sessions.filter((s) => s.status === "live");
+  const nonLiveSessions = sessions.filter((s) => s.status !== "live");
 
   const filteredOtherSessions = nonLiveSessions.filter((s) => {
     if (filterType === "public") return s.is_private !== 1;
@@ -432,7 +432,7 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   const renderSessionRow = (s, emphasis = "normal") => {
     const isHost = isLoggedIn && userId && Number(userId) === s.hostId;
-    const isLive = s.is_live === 1;
+    const isLive = s.status === "live";
 
     return (
       <motion.div

@@ -398,7 +398,7 @@ const SessionPage = () => {
       setSession(sessRes.data);
       setQueue(queueRes.data || []);
       setIsHost(isLoggedIn && sessRes.data.hostId === Number(userId));
-      setSessionLive(!!sessRes.data.is_live);
+      setSessionLive(sessRes.data.status === "live");
 
       if (sessRes.data.is_private) {
         loadLiveParticipants();
