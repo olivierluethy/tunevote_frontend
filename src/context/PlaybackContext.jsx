@@ -70,6 +70,7 @@ export const PlaybackProvider = ({ children }) => {
   const [pauseTitle, setPauseTitle] = useState("");
 
   const playerRef = useRef(null);
+  const hostRef = useRef(null); // stable React-owned wrapper for the YT iframe
   const socketRef = useRef(null);
   const syncIntervalRef = useRef(null);
   const pauseTimerRef = useRef(null);
@@ -166,13 +167,22 @@ export const PlaybackProvider = ({ children }) => {
       ? { videoId, attempts: 0, lastTrigger: null }
       : null;
 
-    if (!window.YT || !window.YT.Player) {
-      // API not ready yet — retry shortly.
+    if (!window.YT || !window.YT.Player || !hostRef.current) {
+      // API (or the host wrapper) not ready yet — retry shortly.
       setTimeout(() => createPlayer(videoId, startSeconds, shouldPlay), 300);
       return;
     }
 
-    playerRef.current = new window.YT.Player("youtube-player", {
+    // Hand YouTube a FRESH child node to replace, never the React-managed
+    // wrapper itself. YT.Player() swaps its target element for an <iframe>;
+    // if that target were a node React controls, React's later insert/remove
+    // operations would throw NotFoundError (corrupted reconciliation). The
+    // wrapper (hostRef) stays put; only this disposable child gets replaced.
+    hostRef.current.innerHTML = "";
+    const target = document.createElement("div");
+    hostRef.current.appendChild(target);
+
+    playerRef.current = new window.YT.Player(target, {
       height: 0,
       width: 0,
       videoId,
@@ -737,10 +747,12 @@ export const PlaybackProvider = ({ children }) => {
     <PlaybackContext.Provider value={value}>
       {children}
       {/* The single, persistent player host — lives at the app root so it
-          survives route changes. Rendered unconditionally (hidden 0×0) so the
-          element always exists before createPlayer() targets it. */}
+          survives route changes. React owns this wrapper but never touches its
+          contents; createPlayer() appends a disposable child inside it for the
+          YouTube iframe, so React reconciliation is never corrupted. */}
       <div
-        id="youtube-player"
+        ref={hostRef}
+        aria-hidden="true"
         style={{ width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
       />
     </PlaybackContext.Provider>
