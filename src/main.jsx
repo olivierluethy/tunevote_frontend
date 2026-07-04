@@ -15,6 +15,8 @@ import ArtistDetail from "./pages/ArtistDetail";
 import UserDetail from "./pages/UserDetail";
 import GoogleCallback from "./components/GoogleCallback";   // oder wo du sie abgelegt hast
 import FacebookCallback from "./components/FacebookCallback";
+import { PlaybackProvider } from "./context/PlaybackContext";
+import MiniPlayer from "./components/MiniPlayer";
 
 // 🔐 Nur für geschützte Bereiche (Dashboard usw.)
 const RequireAuth = ({ children }) => {
@@ -51,6 +53,7 @@ const HomeRedirect = () => {
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
+      <PlaybackProvider>
       <Routes>
 
         {/* 🏠 Home */}
@@ -143,6 +146,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="*" element={<Navigate to="/" replace />} />
 
       </Routes>
+      <MiniPlayer />
+      </PlaybackProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
