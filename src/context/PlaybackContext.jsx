@@ -737,13 +737,12 @@ export const PlaybackProvider = ({ children }) => {
     <PlaybackContext.Provider value={value}>
       {children}
       {/* The single, persistent player host — lives at the app root so it
-          survives route changes. Rendered whenever a session is active. */}
-      {active && (
-        <div
-          id="youtube-player"
-          style={{ width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
-        />
-      )}
+          survives route changes. Rendered unconditionally (hidden 0×0) so the
+          element always exists before createPlayer() targets it. */}
+      <div
+        id="youtube-player"
+        style={{ width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
+      />
     </PlaybackContext.Provider>
   );
 };
