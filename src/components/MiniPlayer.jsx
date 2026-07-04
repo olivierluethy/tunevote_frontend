@@ -133,6 +133,17 @@ const MiniPlayer = () => {
                 {/* Up Next (hidden on narrow screens; queue button stays) */}
                 {upNext && (
                   <div className="hidden md:flex items-center gap-2 min-w-0 flex-1 pl-3 border-l border-white/10">
+                    {upNext.thumbnail ? (
+                      <img
+                        src={upNext.thumbnail}
+                        alt=""
+                        className="w-8 h-8 rounded-lg object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                        <Music className="w-4 h-4 text-white/40" />
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold flex items-center gap-1">
                         Up next
