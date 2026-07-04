@@ -535,6 +535,13 @@ const SessionPage = () => {
       loadSessionData();
     });
 
+    // Host renamed the session — reflect the new title in the header instantly.
+    socketRef.current.on("session_renamed", (data) => {
+      if (Number(data.sessionId) === Number(sessionId)) {
+        setSession((prev) => (prev ? { ...prev, title: data.title } : prev));
+      }
+    });
+
     if (isHost && sessionId) {
       socketRef.current.emit("join-session-host", sessionId);
     }

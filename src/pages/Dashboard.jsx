@@ -97,9 +97,19 @@ export default function Dashboard() {
       );
     });
 
+    // Live session rename — update the card title without waiting for a refetch.
+    socketRef.current.on("session_renamed", (data) => {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === data.sessionId ? { ...s, title: data.title } : s
+        )
+      );
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.off("participant_count_update");
+        socketRef.current.off("session_renamed");
         socketRef.current.disconnect();
       }
     };
