@@ -6,6 +6,7 @@ import BreakModal from "./session/BreakModal";
 import ParticipantsModal from "./session/ParticipantsModal";
 import QrModal from "./session/QrModal";
 import EditNameModal from "./session/EditNameModal";
+import SessionHeader from "./session/SessionHeader";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import unidecode from "unidecode";
@@ -1229,80 +1230,21 @@ const SessionPage = () => {
           HEADER — slim, persistent. Identity + navigation only.
           Stats and actions are pulled into the stage-aware body.
          ──────────────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/90 border-b border-white/5">
-        <div className="px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h1 className="font-bold text-base truncate">{session.title}</h1>
-                {isHost && (
-                  <button
-                    onClick={() => {
-                      setEditingName(session.title);
-                      setIsEditingName(true);
-                    }}
-                    className="p-1 hover:bg-white/10 rounded transition-colors shrink-0"
-                  >
-                    <Edit3 className="w-4 h-4 text-white/50" />
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-white/50">
-                {sessionLive ? (
-                  <span className="flex items-center gap-1 text-green-400">
-                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>
-                    Live
-                  </span>
-                ) : (
-                  <span className="text-yellow-400">Waiting to start</span>
-                )}
-                {session.is_private === 1 && (
-                  <span className="flex items-center gap-1">
-                    <Lock className="w-3 h-3" />
-                    Private
-                  </span>
-                )}
-                <span className="text-white/30">·</span>
-                <span>{queuedSongs.length} in queue</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {session.is_private === 1 && (
-              <button
-                onClick={() => setShowParticipantsModal(true)}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors relative"
-              >
-                <Users className="w-5 h-5" />
-                {liveParticipants.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-purple-500 text-[10px] font-bold flex items-center justify-center">
-                    {liveParticipants.length}
-                  </span>
-                )}
-              </button>
-            )}
-            <button
-              onClick={() => setQrModalOpen(true)}
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-            >
-              <QrCode className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleShare}
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-            >
-              <Share2 className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      </header>
+      <SessionHeader
+        session={session}
+        isHost={isHost}
+        sessionLive={sessionLive}
+        queuedCount={queuedSongs.length}
+        participantCount={liveParticipants.length}
+        onBack={() => navigate("/dashboard")}
+        onEditName={() => {
+          setEditingName(session.title);
+          setIsEditingName(true);
+        }}
+        onOpenParticipants={() => setShowParticipantsModal(true)}
+        onOpenQr={() => setQrModalOpen(true)}
+        onShare={handleShare}
+      />
 
       {/* ──────────────────────────────────────────────────────────────────────
           STAGE-AWARE BODY. The page reshapes itself based on `stage`.
