@@ -281,6 +281,7 @@ export const PlaybackProvider = ({ children }) => {
   const syncPlayback = ({
     current_queue_item_id,
     current_video_id,
+    current_title,
     video_start_time,
     is_playing,
   }) => {
@@ -290,6 +291,12 @@ export const PlaybackProvider = ({ children }) => {
     const elapsed = (Date.now() - video_start_time) / 1000;
     const progress = Math.max(0, elapsed);
 
+    // The server now sends the authoritative title with the sync, so the new
+    // song shows its real name immediately — no "Loading…"/"Unknown" flash.
+    const serverTitle =
+      current_title && !PLACEHOLDER_TITLES.has(current_title)
+        ? current_title
+        : null;
     const cachedMeta = metaCacheRef.current.get(current_video_id);
     const prevSong = currentSongRef.current;
     const prevValid =
@@ -297,11 +304,20 @@ export const PlaybackProvider = ({ children }) => {
       prevSong?.title &&
       !PLACEHOLDER_TITLES.has(prevSong.title);
 
-    let resolvedTitle = cachedMeta?.title || null;
+    let resolvedTitle = serverTitle || cachedMeta?.title || null;
     let resolvedThumb = cachedMeta?.thumbnail || "";
     if (!resolvedTitle && prevValid) {
       resolvedTitle = prevSong.title;
       resolvedThumb = prevSong.thumbnail || resolvedThumb;
+    }
+
+    // Cache the server title so the mini-player, MediaSession and later syncs
+    // reuse it instead of re-resolving over the network.
+    if (serverTitle && !cachedMeta) {
+      metaCacheRef.current.set(current_video_id, {
+        title: serverTitle,
+        thumbnail: resolvedThumb,
+      });
     }
 
     setCurrentSong({
@@ -313,7 +329,8 @@ export const PlaybackProvider = ({ children }) => {
 
     createPlayer(current_video_id, progress, is_playing);
 
-    if (!resolvedTitle) {
+    // Fill any remaining gap (missing title, or just the thumbnail) from metadata.
+    if (!resolvedTitle || !resolvedThumb) {
       fetchAndApplyMetadata(current_video_id);
     }
   };
