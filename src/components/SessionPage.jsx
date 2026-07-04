@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { usePlayback } from "../context/PlaybackContext";
+import { resolveAuthFailure, clearUserAuth } from "../utils/auth";
 import BreakModal from "./session/BreakModal";
 import ParticipantsModal from "./session/ParticipantsModal";
 import QrModal from "./session/QrModal";
@@ -418,9 +419,21 @@ const SessionPage = () => {
       }
     } catch (err) {
       console.error(err);
-      if (err.response?.status === 401 || err.response?.status === 403) {
+      const status = err.response?.status;
+      const action = resolveAuthFailure({
+        hadToken: !!localStorage.getItem("token"),
+        status,
+      });
+      if (action === "clear-and-login") {
+        // A leftover login token was present but the server rejected it — the
+        // previous login has expired. Purge the stale credential so it can't
+        // shadow a guest identity, then send the user to re-authenticate
+        // (consistent with the dashboard's handling). Do NOT offer guest join.
+        clearUserAuth();
+        navigate("/login");
+      } else if (action === "guest") {
         setShowGuestModal(true);
-      } else if (err.response?.status === 404) {
+      } else if (status === 404) {
         navigate("/dashboard");
       }
     }
@@ -1022,6 +1035,9 @@ const SessionPage = () => {
         nickname,
       });
 
+      // Committing to a guest identity: drop any leftover user login so it can
+      // never shadow this guestToken (getAuthHeaders prefers the Bearer token).
+      clearUserAuth();
       localStorage.setItem("guestToken", res.data.guestToken);
       localStorage.setItem("guestName", nickname);
 
