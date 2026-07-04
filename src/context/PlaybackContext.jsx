@@ -69,6 +69,11 @@ export const PlaybackProvider = ({ children }) => {
   const [pauseRemaining, setPauseRemaining] = useState(0);
   const [pauseTitle, setPauseTitle] = useState("");
 
+  // Active session's queue + suggestions — power the banner's "Up Next" and the
+  // queue overlay (vote + suggest without leaving the current page).
+  const [queue, setQueue] = useState([]);
+  const [proposals, setProposals] = useState([]);
+
   const playerRef = useRef(null);
   const hostRef = useRef(null); // stable React-owned wrapper for the YT iframe
   const socketRef = useRef(null);
@@ -353,6 +358,101 @@ export const PlaybackProvider = ({ children }) => {
     }
   };
 
+  // === Queue + suggestions for the active session =========================
+  const loadQueue = useCallback(async (sessionId) => {
+    try {
+      const { data } = await axios.get(`${API}/sessions/${sessionId}/queue`, {
+        headers: getAuthHeaders(),
+      });
+      setQueue(data || []);
+    } catch (err) {
+      console.warn("Could not load queue", err.response?.status);
+    }
+  }, []);
+
+  const loadProposals = useCallback(async (sessionId) => {
+    try {
+      const { data } = await axios.get(
+        `${API}/sessions/${sessionId}/proposals`,
+        { headers: getAuthHeaders() }
+      );
+      setProposals(data || []);
+    } catch (err) {
+      console.warn("Could not load proposals", err.response?.status);
+    }
+  }, []);
+
+  // Vote for a suggested song from the banner or the queue overlay.
+  const voteProposal = useCallback(async (proposalId) => {
+    const sessionId = activeRef.current?.sessionId;
+    if (!sessionId) return;
+    try {
+      await axios.post(
+        `${API}/sessions/${sessionId}/proposals/${proposalId}/vote`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      loadProposals(sessionId);
+    } catch (err) {
+      console.error("Voting error:", err);
+      alert(err.response?.data?.message || "Error voting");
+    }
+  }, [loadProposals]);
+
+  // Suggest a new song into the active session (from the queue overlay).
+  const proposeSong = useCallback(async (video) => {
+    const sessionId = activeRef.current?.sessionId;
+    if (!sessionId) return false;
+    const videoId = video.id?.videoId || video.youtubeId;
+    const title = video.snippet?.title || video.title;
+    const thumbnail =
+      video.snippet?.thumbnails?.medium?.url ||
+      video.snippet?.thumbnails?.default?.url ||
+      video.thumbnail ||
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+    if (!videoId || !title) return false;
+    try {
+      await axios.post(
+        `${API}/sessions/${sessionId}/proposals`,
+        { videoId, title, thumbnail },
+        { headers: getAuthHeaders() }
+      );
+      loadProposals(sessionId);
+      return true;
+    } catch (err) {
+      alert(
+        err.response?.data?.message === "Maximal 5 Songs pro Voting-Runde erlaubt."
+          ? "🚫 Maximum 5 songs per voting round."
+          : "Error suggesting: " + (err.response?.data?.message || "Unknown error")
+      );
+      return false;
+    }
+  }, [loadProposals]);
+
+  // Lightweight YouTube search for the suggest field in the queue overlay.
+  const searchSongs = useCallback(async (query) => {
+    const key = import.meta.env.VITE_YOUTUBE_KEY;
+    if (!query.trim() || !key) return [];
+    try {
+      const res = await axios.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        {
+          params: {
+            part: "snippet",
+            type: "video",
+            maxResults: 6,
+            q: query,
+            key,
+          },
+        }
+      );
+      return res.data.items || [];
+    } catch (err) {
+      console.warn("YouTube search failed", err.message);
+      return [];
+    }
+  }, []);
+
   // === Full teardown of the current live session ===========================
   const teardownPlayback = useCallback(() => {
     if (syncIntervalRef.current) {
@@ -383,6 +483,8 @@ export const PlaybackProvider = ({ children }) => {
     }
     currentVideoIdRef.current = null;
     setCurrentSong(null);
+    setQueue([]);
+    setProposals([]);
     setVotingPhase(null);
     setTimeRemaining(0);
     setIsPaused(false);
@@ -464,6 +566,17 @@ export const PlaybackProvider = ({ children }) => {
       teardownPlayback();
       setActive(null);
     });
+
+    // Keep the banner's Up Next + queue overlay live as others vote/suggest.
+    socket.on("proposals_updated", () => {
+      if (activeRef.current?.sessionId !== sessionId) return;
+      loadProposals(sessionId);
+    });
+    socket.on("queue_updated", () => {
+      if (activeRef.current?.sessionId !== sessionId) return;
+      loadQueue(sessionId);
+      loadProposals(sessionId);
+    });
   };
 
   // === Public actions =======================================================
@@ -523,6 +636,8 @@ export const PlaybackProvider = ({ children }) => {
       }
 
       loadCurrentPhase(sessionId);
+      loadQueue(sessionId);
+      loadProposals(sessionId);
 
       // Drift-correction poll.
       syncIntervalRef.current = setInterval(async () => {
@@ -735,12 +850,17 @@ export const PlaybackProvider = ({ children }) => {
     isPaused,
     pauseRemaining,
     pauseTitle,
+    queue,
+    proposals,
     // actions
     joinLive,
     leaveLive,
     setVolume: setVolumeLevel,
     toggleMute,
     togglePlayPause,
+    voteProposal,
+    proposeSong,
+    searchSongs,
   };
 
   return (
