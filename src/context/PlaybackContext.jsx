@@ -504,6 +504,15 @@ export const PlaybackProvider = ({ children }) => {
     });
     socketRef.current = socket;
 
+    // Heartbeat: keep this participant's liveness fresh so the backend reaper
+    // doesn't drop us on an unclean disconnect.
+    const heartbeat = setInterval(() => {
+      if (activeRef.current?.sessionId === sessionId && socket.connected) {
+        socket.emit("heartbeat", { sessionId });
+      }
+    }, 10000);
+    socket.on("disconnect", () => clearInterval(heartbeat));
+
     socket.on("connect_error", (err) => console.warn("Playback socket error", err));
 
     socket.on("playback_sync", (data) => {
