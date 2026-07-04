@@ -1,4 +1,5 @@
 import { ArrowLeft, Edit3, Lock, Users, QrCode, Share2 } from "lucide-react";
+import LiveViewerCount from "../LiveViewerCount";
 
 // Slim sticky header: identity + navigation + share/participants actions.
 const SessionHeader = ({
@@ -42,6 +43,9 @@ const SessionHeader = ({
               </span>
             ) : (
               <span className="text-yellow-400">Waiting to start</span>
+            )}
+            {sessionLive && participantCount > 0 && (
+              <LiveViewerCount count={participantCount} live />
             )}
             {session.is_private === 1 && (
               <span className="flex items-center gap-1">

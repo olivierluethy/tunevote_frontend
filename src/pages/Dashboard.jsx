@@ -17,7 +17,6 @@ import {
   LogOut,
   Copy,
   Trash2,
-  Users,
   Radio,
   Clock,
   Music,
@@ -40,6 +39,7 @@ import {
   ArrowRight,
   CreditCard,
 } from "lucide-react";
+import LiveViewerCount from "../components/LiveViewerCount";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -480,10 +480,7 @@ export default function Dashboard() {
               )}
             </div>
             <div className="flex items-center gap-3 text-xs text-white/50">
-              <span className="flex items-center gap-1">
-                <Users className="w-3 h-3" />
-                {s.participant_count || 0}
-              </span>
+              <LiveViewerCount count={s.participant_count || 0} live={isLive} />
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 {formatRelativeDate(s.created_at)}
