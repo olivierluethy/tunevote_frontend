@@ -81,6 +81,7 @@ export const PlaybackProvider = ({ children }) => {
   const pauseTimerRef = useRef(null);
   const autoplayProbeRef = useRef(null);
   const pendingPlayRef = useRef(null);
+  const postStartSyncRef = useRef(null); // one-shot buffering-compensation timer
 
   const currentVideoIdRef = useRef(null);
   const metaCacheRef = useRef(new Map());
@@ -361,6 +362,25 @@ export const PlaybackProvider = ({ children }) => {
 
     createPlayer(current_video_id, progress, is_playing);
 
+    // Buffering compensation: loading the new video takes a variable moment, so
+    // the player effectively starts a bit behind the live position. Once it has
+    // had time to buffer, snap to the (recomputed) live position — seek only, no
+    // player rebuild — so everyone converges quickly instead of waiting for the
+    // next drift poll.
+    if (postStartSyncRef.current) clearTimeout(postStartSyncRef.current);
+    if (is_playing) {
+      postStartSyncRef.current = setTimeout(() => {
+        postStartSyncRef.current = null;
+        if (currentVideoIdRef.current !== current_video_id) return;
+        if (selfPausedRef.current) return;
+        const target = (serverNow() - video_start_time) / 1000;
+        const cur = playerRef.current?.getCurrentTime?.() || 0;
+        if (target > 0 && Math.abs(cur - target) > 1) {
+          playerRef.current?.seekTo(target, true);
+        }
+      }, 2500);
+    }
+
     // Fill any remaining gap (missing title, or just the thumbnail) from metadata.
     if (!resolvedTitle || !resolvedThumb) {
       fetchAndApplyMetadata(current_video_id);
@@ -515,6 +535,10 @@ export const PlaybackProvider = ({ children }) => {
     if (autoplayProbeRef.current) {
       clearTimeout(autoplayProbeRef.current);
       autoplayProbeRef.current = null;
+    }
+    if (postStartSyncRef.current) {
+      clearTimeout(postStartSyncRef.current);
+      postStartSyncRef.current = null;
     }
     pendingPlayRef.current = null;
     if (playerRef.current) {
@@ -713,14 +737,14 @@ export const PlaybackProvider = ({ children }) => {
           if (data.current_video_id && data.video_start_time) {
             const elapsed = (serverNow() - data.video_start_time) / 1000;
             const current = playerRef.current?.getCurrentTime?.() || 0;
-            if (Math.abs(current - elapsed) > 2) {
+            if (Math.abs(current - elapsed) > 1.5) {
               playerRef.current?.seekTo(elapsed, true);
             }
           }
         } catch (e) {
           console.warn("Sync failed:", e.message);
         }
-      }, 10000);
+      }, 5000);
     },
     [teardownPlayback]
   );
