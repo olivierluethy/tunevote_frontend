@@ -91,6 +91,7 @@ export const PlaybackProvider = ({ children }) => {
   const mutedRef = useRef(false);
   const volumeRef = useRef(50);
   const currentSongRef = useRef(null);
+  const videoStartTimeRef = useRef(null); // server start time (ms) of the current song, for the progress bar
   const selfPausedRef = useRef(false);
 
   // --- Clock-offset correction ---------------------------------------------
@@ -316,6 +317,10 @@ export const PlaybackProvider = ({ children }) => {
     is_playing,
   }) => {
     if (!current_video_id || !video_start_time) return;
+
+    // Remember the server start time so the mini-player progress bar can derive
+    // a live position (advances even when the local user pauses their own audio).
+    videoStartTimeRef.current = video_start_time;
 
     // Keep the server-clock estimate fresh from pushed events (one-way).
     syncClock(server_time);
@@ -555,6 +560,7 @@ export const PlaybackProvider = ({ children }) => {
       socketRef.current = null;
     }
     currentVideoIdRef.current = null;
+    videoStartTimeRef.current = null;
     setCurrentSong(null);
     setQueue([]);
     setProposals([]);
@@ -928,6 +934,22 @@ export const PlaybackProvider = ({ children }) => {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
+  // Live song progress for the mini-player progress bar. Position is
+  // server-authoritative (keeps advancing even if the local user paused their
+  // own audio); duration comes from the loaded YouTube player. Read-only —
+  // seeking is intentionally omitted because playback is synced session-wide.
+  const getPlaybackProgress = () => {
+    const player = playerRef.current;
+    const duration = player?.getDuration?.() || 0;
+    const startedAt = videoStartTimeRef.current;
+    let position = startedAt
+      ? (serverNow() - startedAt) / 1000
+      : player?.getCurrentTime?.() || 0;
+    if (!Number.isFinite(position) || position < 0) position = 0;
+    if (duration > 0) position = Math.min(position, duration);
+    return { position, duration };
+  };
+
   const value = {
     // state
     active,
@@ -952,6 +974,7 @@ export const PlaybackProvider = ({ children }) => {
     voteProposal,
     proposeSong,
     searchSongs,
+    getPlaybackProgress,
   };
 
   return (

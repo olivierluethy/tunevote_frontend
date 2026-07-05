@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
@@ -58,6 +58,7 @@ const MiniPlayer = () => {
     setVolume,
     voteProposal,
     leaveLive,
+    getPlaybackProgress,
   } = usePlayback();
 
   const location = useLocation();
@@ -114,6 +115,37 @@ const MiniPlayer = () => {
       ? "from-emerald-500/50 via-purple-500/30 to-pink-500/45"
       : "from-white/10 via-white/[0.06] to-white/10";
   const accentBorder = onBreak ? "border-amber-400/30" : "border-emerald-400/25";
+
+  // Live song-progress bar. We poll the provider's server-authoritative getter
+  // ~2.5×/sec and let CSS ease the fill between ticks so it glides smoothly.
+  // Read-only: playback is synced session-wide, so seeking is intentionally off.
+  const [progress, setProgress] = useState({ position: 0, duration: 0 });
+  useEffect(() => {
+    if (!show || !currentSong || onBreak) {
+      setProgress({ position: 0, duration: 0 });
+      return;
+    }
+    const tick = () => setProgress(getPlaybackProgress());
+    tick();
+    const id = setInterval(tick, 400);
+    return () => clearInterval(id);
+    // getPlaybackProgress reads refs (stable); re-subscribe only on song change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show, currentSong?.videoId, onBreak]);
+
+  const pct =
+    progress.duration > 0
+      ? Math.min(100, (progress.position / progress.duration) * 100)
+      : 0;
+  const showProgress = !!currentSong && !onBreak && progress.duration > 0;
+  const fmtTime = (s) => {
+    if (!Number.isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${m}:${sec}`;
+  };
 
   // framer-motion presets, all disabled under prefers-reduced-motion.
   const enter = reduce
@@ -391,6 +423,32 @@ const MiniPlayer = () => {
                     </motion.button>
                   </div>
                 </div>
+
+                {/* Song progress — live, read-only (session-synced playback) */}
+                {showProgress && (
+                  <div className="px-3 -mt-1 pb-1.5 flex items-center gap-2">
+                    <span className="text-[10px] tabular-nums text-white/45 w-8 text-right shrink-0">
+                      {fmtTime(progress.position)}
+                    </span>
+                    <div className="relative flex-1 h-3 flex items-center">
+                      <div className="absolute inset-x-0 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-[width] duration-500 ease-linear motion-reduce:transition-none"
+                          style={{ width: `${pct}%` }}
+                        >
+                          <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer motion-reduce:hidden" />
+                        </div>
+                      </div>
+                      <div
+                        className="absolute h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_rgba(52,211,153,0.9)] transition-[left] duration-500 ease-linear motion-reduce:transition-none"
+                        style={{ left: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] tabular-nums text-white/45 w-8 shrink-0">
+                      {fmtTime(progress.duration)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Volume bar — custom animated track over a transparent native input */}
                 {!isMutedForMe && (
