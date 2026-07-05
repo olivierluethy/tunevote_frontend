@@ -92,6 +92,34 @@ export const PlaybackProvider = ({ children }) => {
   const currentSongRef = useRef(null);
   const selfPausedRef = useRef(false);
 
+  // --- Clock-offset correction ---------------------------------------------
+  // Playback position is (serverClock − video_start_time). A device whose local
+  // clock is off would play ahead of / behind everyone else, so we estimate the
+  // offset between the server clock and THIS device's clock and apply it — every
+  // device then converges to the same position regardless of its local clock.
+  const clockOffsetRef = useRef(0); // estimated (serverClock − Date.now()) in ms
+  const clockSyncedRef = useRef(false);
+  const serverNow = () => Date.now() + clockOffsetRef.current;
+  // Feed a server_time reading. With t0/t2 (local send/receive stamps) it is
+  // RTT-compensated (NTP-style, symmetric-path assumption); without them it is a
+  // one-way estimate from a pushed socket event.
+  const syncClock = (serverTime, t0, t2) => {
+    if (!serverTime) return;
+    const sample =
+      t0 != null && t2 != null
+        ? serverTime - (t0 + t2) / 2
+        : serverTime - Date.now();
+    if (
+      !clockSyncedRef.current ||
+      Math.abs(sample - clockOffsetRef.current) > 3000
+    ) {
+      clockOffsetRef.current = sample; // first reading or a clock jump → snap
+    } else {
+      clockOffsetRef.current = 0.7 * clockOffsetRef.current + 0.3 * sample; // smooth
+    }
+    clockSyncedRef.current = true;
+  };
+
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
@@ -283,12 +311,16 @@ export const PlaybackProvider = ({ children }) => {
     current_video_id,
     current_title,
     video_start_time,
+    server_time,
     is_playing,
   }) => {
     if (!current_video_id || !video_start_time) return;
 
+    // Keep the server-clock estimate fresh from pushed events (one-way).
+    syncClock(server_time);
+
     currentVideoIdRef.current = current_video_id;
-    const elapsed = (Date.now() - video_start_time) / 1000;
+    const elapsed = (serverNow() - video_start_time) / 1000;
     const progress = Math.max(0, elapsed);
 
     // The server now sends the authoritative title with the sync, so the new
@@ -543,6 +575,7 @@ export const PlaybackProvider = ({ children }) => {
         syncPlayback({
           current_video_id: data.firstVideoId,
           video_start_time: data.video_start_time,
+          server_time: data.server_time,
           is_playing: true,
         });
       }
@@ -646,10 +679,12 @@ export const PlaybackProvider = ({ children }) => {
           {},
           { headers: getAuthHeaders() }
         );
+        const t0 = Date.now();
         const { data } = await axios.get(
           `${API}/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() }
         );
+        syncClock(data.server_time, t0, Date.now());
         if (data.current_video_id && data.video_start_time) {
           syncPlayback(data);
         }
@@ -669,12 +704,14 @@ export const PlaybackProvider = ({ children }) => {
       syncIntervalRef.current = setInterval(async () => {
         if (activeRef.current?.sessionId !== sessionId) return;
         try {
+          const t0 = Date.now();
           const { data } = await axios.get(
             `${API}/sessions/${sessionId}/playback-sync`,
             { headers: getAuthHeaders() }
           );
+          syncClock(data.server_time, t0, Date.now());
           if (data.current_video_id && data.video_start_time) {
-            const elapsed = (Date.now() - data.video_start_time) / 1000;
+            const elapsed = (serverNow() - data.video_start_time) / 1000;
             const current = playerRef.current?.getCurrentTime?.() || 0;
             if (Math.abs(current - elapsed) > 2) {
               playerRef.current?.seekTo(elapsed, true);
@@ -739,12 +776,14 @@ export const PlaybackProvider = ({ children }) => {
       // Resume: jump back to the live position, then play.
       const sessionId = activeRef.current?.sessionId;
       try {
+        const t0 = Date.now();
         const { data } = await axios.get(
           `${API}/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() }
         );
+        syncClock(data.server_time, t0, Date.now());
         if (data?.video_start_time) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const elapsed = (serverNow() - data.video_start_time) / 1000;
           player.seekTo(Math.max(0, elapsed), true);
         }
       } catch (e) {
@@ -844,12 +883,14 @@ export const PlaybackProvider = ({ children }) => {
       if (!selfPausedRef.current) attemptPlay("visibility");
       await new Promise((r) => setTimeout(r, 150));
       try {
+        const t0 = Date.now();
         const { data } = await axios.get(
           `${API}/sessions/${sessionId}/playback-sync`,
           { headers: getAuthHeaders() }
         );
+        syncClock(data.server_time, t0, Date.now());
         if (data?.current_video_id && data.video_start_time && !selfPausedRef.current) {
-          const elapsed = (Date.now() - data.video_start_time) / 1000;
+          const elapsed = (serverNow() - data.video_start_time) / 1000;
           const current = playerRef.current?.getCurrentTime?.() || 0;
           if (Math.abs(current - elapsed) > 2) {
             playerRef.current?.seekTo(elapsed, true);
