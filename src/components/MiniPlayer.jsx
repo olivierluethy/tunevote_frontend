@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { usePlayback } from "../context/PlaybackContext";
 import QueueOverlay from "./QueueOverlay";
+import SongWaveform from "./session/SongWaveform";
 
 // ---------------------------------------------------------------------------
 // PERSISTENT MINI-PLAYER — radio-style "now playing" banner
@@ -102,6 +103,11 @@ const MiniPlayer = () => {
       : null;
 
   const votingActive = votingPhase && timeRemaining > 0;
+  // The queue button's dot signals there are votable suggestions waiting
+  // (user- or AI-generated) — not only during an active voting countdown.
+  const hasSuggestions = proposals.some(
+    (p) => p.status === "suggested" && p.itemType === "music",
+  );
 
   // --- Derived visual state -------------------------------------------------
   const onBreak = isPaused;
@@ -133,10 +139,6 @@ const MiniPlayer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, currentSong?.videoId, onBreak]);
 
-  const pct =
-    progress.duration > 0
-      ? Math.min(100, (progress.position / progress.duration) * 100)
-      : 0;
   const showProgress = !!currentSong && !onBreak && progress.duration > 0;
   const fmtTime = (s) => {
     if (!Number.isFinite(s) || s < 0) s = 0;
@@ -404,7 +406,7 @@ const MiniPlayer = () => {
                       title="Open queue"
                     >
                       <ListMusic className="w-[18px] h-[18px]" />
-                      {votingActive && (
+                      {(votingActive || hasSuggestions) && (
                         <span className="absolute top-1 right-1 flex h-2 w-2">
                           <span className="absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75 animate-ping motion-reduce:animate-none" />
                           <span className="relative inline-flex h-2 w-2 rounded-full bg-purple-400" />
@@ -430,20 +432,14 @@ const MiniPlayer = () => {
                     <span className="text-[10px] tabular-nums text-white/45 w-8 text-right shrink-0">
                       {fmtTime(progress.position)}
                     </span>
-                    <div className="relative flex-1 h-3 flex items-center">
-                      <div className="absolute inset-x-0 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                        <div
-                          className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-[width] duration-500 ease-linear motion-reduce:transition-none"
-                          style={{ width: `${pct}%` }}
-                        >
-                          <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer motion-reduce:hidden" />
-                        </div>
-                      </div>
-                      <div
-                        className="absolute h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_rgba(52,211,153,0.9)] transition-[left] duration-500 ease-linear motion-reduce:transition-none"
-                        style={{ left: `${pct}%` }}
-                      />
-                    </div>
+                    <SongWaveform
+                      seed={currentSong?.videoId || currentSong?.title || ""}
+                      playing={playing}
+                      getProgress={getPlaybackProgress}
+                      bars={44}
+                      heightClass="h-6"
+                      className="flex-1"
+                    />
                     <span className="text-[10px] tabular-nums text-white/45 w-8 shrink-0">
                       {fmtTime(progress.duration)}
                     </span>

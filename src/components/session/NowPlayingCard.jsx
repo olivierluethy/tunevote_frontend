@@ -56,6 +56,8 @@ const NowPlayingCard = ({
         seed={currentSong.videoId || currentSong.title || ""}
         playing={!!isPlaying}
         getProgress={getProgress}
+        bars={72}
+        heightClass="h-16"
         className="mt-3"
       />
       {!isMutedForMe && (

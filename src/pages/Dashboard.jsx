@@ -739,7 +739,7 @@ export default function Dashboard() {
         </div>
       </motion.header>
 
-      <main className="relative z-10 max-w-4xl mx-auto px-4 py-6 pb-24 space-y-6">
+      <main className="relative z-10 max-w-4xl mx-auto px-4 py-6 pb-32 space-y-6">
 
         {/* Guest banner — only shown for guests */}
         {isGuest && (

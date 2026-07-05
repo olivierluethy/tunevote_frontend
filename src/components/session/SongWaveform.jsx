@@ -43,6 +43,7 @@ export default function SongWaveform({
   playing = false,
   getProgress,
   bars = 56,
+  heightClass = "h-8",
   className = "",
 }) {
   const barsRef = useRef(buildBars(String(seed), bars));
@@ -80,7 +81,7 @@ export default function SongWaveform({
 
   return (
     <div
-      className={`flex items-center gap-[2px] h-8 w-full ${className}`}
+      className={`flex items-center gap-[2px] w-full ${heightClass} ${className}`}
       aria-hidden="true"
     >
       {barsRef.current.map((h, i) => {

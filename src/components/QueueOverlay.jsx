@@ -8,6 +8,7 @@ import {
   Plus,
   Timer,
   Radio,
+  Sparkles,
 } from "lucide-react";
 import { usePlayback } from "../context/PlaybackContext";
 
@@ -188,7 +189,18 @@ const QueueOverlay = ({ open, onClose }) => {
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{song.title}</p>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-sm truncate">{song.title}</p>
+                            {song.itemSource === "ai" && (
+                              <span
+                                title="AI suggestion"
+                                className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 text-[10px] font-semibold ring-1 ring-purple-400/30"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                AI
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-white/40">
                             {song.votes || 0}{" "}
                             {song.votes === 1 ? "vote" : "votes"}
