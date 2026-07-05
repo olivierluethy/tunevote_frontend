@@ -81,6 +81,11 @@ export default {
         'spin-slow': 'spin 3s linear infinite',
         'bounce-slow': 'bounce 2s infinite',
         'glow': 'glow 2s ease-in-out infinite alternate',
+        // Mini-player: live equalizer bars, shimmer sweep across the volume
+        // fill, and a slow ambient edge-glow that breathes.
+        equalize: 'equalize 1.1s ease-in-out infinite',
+        shimmer: 'shimmer 2.4s linear infinite',
+        'ambient-glow': 'ambient-glow 4.5s ease-in-out infinite',
       },
 
       keyframes: {
@@ -91,6 +96,18 @@ export default {
         glow: {
           '0%': { boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)' },
           '100%': { boxShadow: '0 0 40px rgba(236, 72, 153, 0.6)' },
+        },
+        equalize: {
+          '0%, 100%': { transform: 'scaleY(0.3)' },
+          '50%': { transform: 'scaleY(1)' },
+        },
+        shimmer: {
+          '0%': { transform: 'translateX(-120%)' },
+          '100%': { transform: 'translateX(320%)' },
+        },
+        'ambient-glow': {
+          '0%, 100%': { opacity: '0.35' },
+          '50%': { opacity: '0.75' },
         },
       },
 
