@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dark-mode-only app: the dark background must fill the ENTIRE viewport (and
+   beyond, for overscroll / short pages), so there is never a white/light bleed
+   below the content or around the fixed mini-player. Root cause fix — not a
+   patch over the gap. */
+@layer base {
+  html {
+    @apply bg-slate-950;
+  }
+  body {
+    @apply min-h-screen bg-slate-950 text-white;
+  }
+  #root {
+    @apply min-h-screen bg-slate-950;
+  }
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
