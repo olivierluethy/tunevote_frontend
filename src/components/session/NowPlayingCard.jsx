@@ -1,11 +1,14 @@
 import { motion } from "framer-motion";
 import { Volume2, VolumeX } from "lucide-react";
+import SongWaveform from "./SongWaveform";
 
 // "Now playing" card with the per-user mute toggle and volume slider.
 const NowPlayingCard = ({
   currentSong,
   isMutedForMe,
   volume,
+  isPlaying,
+  getProgress,
   onToggleMute,
   onVolumeChange,
 }) => {
@@ -49,6 +52,12 @@ const NowPlayingCard = ({
           )}
         </button>
       </div>
+      <SongWaveform
+        seed={currentSong.videoId || currentSong.title || ""}
+        playing={!!isPlaying}
+        getProgress={getProgress}
+        className="mt-3"
+      />
       {!isMutedForMe && (
         <div className="mt-3 flex items-center gap-3">
           <input

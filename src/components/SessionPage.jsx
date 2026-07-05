@@ -71,6 +71,8 @@ const SessionPage = () => {
     currentSong,
     volume,
     isMutedForMe,
+    isPlaying,
+    getPlaybackProgress,
     votingPhase,
     timeRemaining,
     isPaused,
@@ -1343,6 +1345,8 @@ const SessionPage = () => {
               currentSong={currentSong}
               isMutedForMe={isMutedForMe}
               volume={volume}
+              isPlaying={isPlaying}
+              getProgress={getPlaybackProgress}
               onToggleMute={togglePersonalMute}
               onVolumeChange={handleVolumeChange}
             />
