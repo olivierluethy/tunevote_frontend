@@ -40,6 +40,7 @@ import {
   Headphones,
 } from "lucide-react";
 import LiveViewerCount from "../components/LiveViewerCount";
+import { usePlayback } from "../context/PlaybackContext";
 
 // Four little bars that borrow the mini-player's equalizer so a live room on
 // the dashboard reads as the same "on air" thing as the persistent player.
@@ -61,6 +62,12 @@ const LiveBars = ({ className = "" }) => (
 
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  // The session this device is currently listening to (survives navigation via
+  // the global playback provider). Powers the "You're listening" state so the
+  // dashboard always shows which live room you're in — same source as the
+  // persistent mini-player.
+  const { activeSessionId } = usePlayback();
 
   // Auth
   const token = localStorage.getItem("token");
@@ -375,7 +382,19 @@ export default function Dashboard() {
   const pendingInvites = receivedInvites.filter(
     (i) => !i.accepted_at && !i.revoked_at
   );
-  const liveSessions = sessions.filter((s) => s.status === "live");
+  // activeSessionId comes from the route param (a string); session ids are
+  // numbers — compare as strings so the match actually lands.
+  const isActiveSession = (s) =>
+    activeSessionId != null && String(s.id) === String(activeSessionId);
+  // The room you're currently in floats to the front of the rail so "You're
+  // listening" is always the first thing you see.
+  const liveSessions = sessions
+    .filter((s) => s.status === "live")
+    .sort((a, b) => {
+      if (isActiveSession(a)) return -1;
+      if (isActiveSession(b)) return 1;
+      return 0;
+    });
   const nonLiveSessions = sessions.filter((s) => s.status !== "live");
   const ownedSessions = sessions.filter(isHostOf);
 
@@ -384,9 +403,6 @@ export default function Dashboard() {
     if (filterType === "private") return s.is_private === 1;
     return true;
   });
-
-  // Currently active playback session — wired to <usePlayback> in a later pass.
-  const activeSessionId = null;
 
   const hasZeroSessions = sessions.length === 0;
   // First-run = a logged-in host with no rooms of their own. If userId is
@@ -509,7 +525,7 @@ export default function Dashboard() {
   // returning to the dashboard always shows where you are.
   // ---------------------------------------------------------------------------
   const renderLiveCard = (s) => {
-    const isCurrent = activeSessionId != null && s.id === activeSessionId;
+    const isCurrent = isActiveSession(s);
 
     return (
       <motion.div
