@@ -38,9 +38,38 @@ import {
   Play,
   ArrowRight,
   Headphones,
+  ArrowUpDown,
+  Check,
 } from "lucide-react";
 import LiveViewerCount from "../components/LiveViewerCount";
 import { usePlayback } from "../context/PlaybackContext";
+
+// Remember when each session was last opened from this device so the "Recently
+// opened" sort — and a freshly created, auto-joined session — surface first.
+const LAST_OPENED_KEY = "tv_last_opened";
+const getLastOpenedMap = () => {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_OPENED_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+const markSessionOpened = (id) => {
+  try {
+    const map = getLastOpenedMap();
+    map[id] = Date.now();
+    localStorage.setItem(LAST_OPENED_KEY, JSON.stringify(map));
+  } catch {
+    /* localStorage unavailable — non-fatal */
+  }
+};
+
+const SORT_OPTIONS = [
+  { key: "recent", label: "Recently created" },
+  { key: "opened", label: "Recently opened" },
+  { key: "active", label: "Most active" },
+  { key: "alpha", label: "A–Z" },
+];
 
 // Four little bars that borrow the mini-player's equalizer so a live room on
 // the dashboard reads as the same "on air" thing as the persistent player.
@@ -94,6 +123,7 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   const FILTER_THRESHOLD = 5;
   const [filterType, setFilterType] = useState("all"); // all, public, private
+  const [sortBy, setSortBy] = useState("recent"); // recent, opened, active, alpha
   const [qrModalSession, setQrModalSession] = useState(null);
   const [showSentInvitesModal, setShowSentInvitesModal] = useState(false);
 
@@ -322,16 +352,19 @@ export default function Dashboard() {
         },
         { headers: getAuthHeaders() }
       );
-      setSessions((prev) => [res.data, ...prev]);
       setNewSessionTitle("");
       trackEvent("session_created", {
         session_id: res.data.id,
         is_private: isPrivate,
       });
+      // Drop the host straight into their new room instead of making them hunt
+      // for it in the list — the session page focuses the add-song input on
+      // arrival so they can start building the queue immediately.
+      markSessionOpened(res.data.id);
+      navigate(`/session/${res.data.id}`);
     } catch (err) {
       alert("Could not create session");
       trackEvent("session_create_failed");
-    } finally {
       setLoading(false);
     }
   };
@@ -362,6 +395,7 @@ export default function Dashboard() {
       session_id: session.id,
       session_title: session.title,
     });
+    markSessionOpened(session.id);
     navigate(`/session/${session.id}`);
   };
 
@@ -402,6 +436,17 @@ export default function Dashboard() {
     if (filterType === "public") return s.is_private !== 1;
     if (filterType === "private") return s.is_private === 1;
     return true;
+  });
+
+  const lastOpenedMap = getLastOpenedMap();
+  const sortedOtherSessions = [...filteredOtherSessions].sort((a, b) => {
+    if (sortBy === "alpha") return (a.title || "").localeCompare(b.title || "");
+    if (sortBy === "active")
+      return (b.participant_count || 0) - (a.participant_count || 0);
+    if (sortBy === "opened")
+      return (lastOpenedMap[b.id] || 0) - (lastOpenedMap[a.id] || 0);
+    // "recent" (default): newest first.
+    return new Date(b.created_at) - new Date(a.created_at);
   });
 
   const hasZeroSessions = sessions.length === 0;
@@ -1094,44 +1139,95 @@ export default function Dashboard() {
                 </span>
               </div>
 
-              {nonLiveSessions.length >= FILTER_THRESHOLD && (
-                <div className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-0.5">
-                  <button
-                    onClick={() => setFilterType("all")}
-                    className={`rounded-md px-2.5 py-1 text-xs transition-all ${
-                      filterType === "all"
-                        ? "bg-white/10 font-medium"
-                        : "text-white/60 hover:bg-white/5"
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    onClick={() => setFilterType("public")}
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
-                      filterType === "public"
-                        ? "bg-white/10 font-medium"
-                        : "text-white/60 hover:bg-white/5"
-                    }`}
-                    title="Public sessions"
-                  >
-                    <Globe className="h-3 w-3" />
-                    <span className="hidden sm:inline">Public</span>
-                  </button>
-                  <button
-                    onClick={() => setFilterType("private")}
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
-                      filterType === "private"
-                        ? "bg-white/10 font-medium"
-                        : "text-white/60 hover:bg-white/5"
-                    }`}
-                    title="Private sessions"
-                  >
-                    <Lock className="h-3 w-3" />
-                    <span className="hidden sm:inline">Private</span>
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {nonLiveSessions.length >= FILTER_THRESHOLD && (
+                  <div className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-0.5">
+                    <button
+                      onClick={() => setFilterType("all")}
+                      className={`rounded-md px-2.5 py-1 text-xs transition-all ${
+                        filterType === "all"
+                          ? "bg-white/10 font-medium"
+                          : "text-white/60 hover:bg-white/5"
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setFilterType("public")}
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
+                        filterType === "public"
+                          ? "bg-white/10 font-medium"
+                          : "text-white/60 hover:bg-white/5"
+                      }`}
+                      title="Public sessions"
+                    >
+                      <Globe className="h-3 w-3" />
+                      <span className="hidden sm:inline">Public</span>
+                    </button>
+                    <button
+                      onClick={() => setFilterType("private")}
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
+                        filterType === "private"
+                          ? "bg-white/10 font-medium"
+                          : "text-white/60 hover:bg-white/5"
+                      }`}
+                      title="Private sessions"
+                    >
+                      <Lock className="h-3 w-3" />
+                      <span className="hidden sm:inline">Private</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Sort — helps find a freshly created or recently used room */}
+                {nonLiveSessions.length > 1 && (
+                  <Menu as="div" className="relative">
+                    <Menu.Button
+                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10"
+                      title="Sort sessions"
+                    >
+                      <ArrowUpDown className="h-3.5 w-3.5" />
+                      <span className="hidden font-medium sm:inline">
+                        {SORT_OPTIONS.find((o) => o.key === sortBy)?.label}
+                      </span>
+                      <ChevronDown className="h-3 w-3 text-white/40" />
+                    </Menu.Button>
+                    <Transition
+                      as={Fragment}
+                      enter="transition ease-out duration-100"
+                      enterFrom="opacity-0 scale-95"
+                      enterTo="opacity-100 scale-100"
+                      leave="transition ease-in duration-75"
+                      leaveFrom="opacity-100 scale-100"
+                      leaveTo="opacity-0 scale-95"
+                    >
+                      <Menu.Items className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl">
+                        {SORT_OPTIONS.map((opt) => (
+                          <Menu.Item key={opt.key}>
+                            {({ active }) => (
+                              <button
+                                onClick={() => setSortBy(opt.key)}
+                                className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm ${
+                                  active ? "bg-white/5" : ""
+                                } ${
+                                  sortBy === opt.key
+                                    ? "text-purple-200"
+                                    : "text-white/80"
+                                }`}
+                              >
+                                {opt.label}
+                                {sortBy === opt.key && (
+                                  <Check className="h-4 w-4 text-purple-400" />
+                                )}
+                              </button>
+                            )}
+                          </Menu.Item>
+                        ))}
+                      </Menu.Items>
+                    </Transition>
+                  </Menu>
+                )}
+              </div>
             </div>
 
             {filteredOtherSessions.length === 0 ? (
