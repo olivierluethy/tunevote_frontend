@@ -37,8 +37,27 @@ import {
   MoreVertical,
   Play,
   ArrowRight,
+  Headphones,
 } from "lucide-react";
 import LiveViewerCount from "../components/LiveViewerCount";
+
+// Four little bars that borrow the mini-player's equalizer so a live room on
+// the dashboard reads as the same "on air" thing as the persistent player.
+// Purely decorative; falls back to a calm half-height bar under reduced motion.
+const LiveBars = ({ className = "" }) => (
+  <span
+    className={`inline-flex items-end gap-[3px] ${className}`}
+    aria-hidden="true"
+  >
+    {[0, 1, 2, 3].map((i) => (
+      <span
+        key={i}
+        className="w-[3px] h-full origin-bottom rounded-full bg-emerald-300 animate-equalize motion-reduce:animate-none motion-reduce:!h-1/2"
+        style={{ animationDelay: `${i * 130}ms` }}
+      />
+    ))}
+  </span>
+);
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -64,8 +83,7 @@ export default function Dashboard() {
   // UI state
   // ---------------------------------------------------------------------------
   // Filter only renders above a certain session count threshold — below that,
-  // it's noise. `showSentInvitesModal` is used to surface sent-invite status
-  // (replaces the old equal-weight "Sent" column).
+  // it's noise. `showSentInvitesModal` is used to surface sent-invite status.
   // ---------------------------------------------------------------------------
   const FILTER_THRESHOLD = 5;
   const [filterType, setFilterType] = useState("all"); // all, public, private
@@ -86,7 +104,6 @@ export default function Dashboard() {
     socketRef.current = io("https://api.tunevote.com/");
 
     socketRef.current.on("participant_count_update", (data) => {
-      console.log("Dashboard: participant_count_update received", data);
       setSessions((prev) =>
         prev.map((s) =>
           s.id === data.sessionId ? { ...s, participant_count: data.count } : s
@@ -182,8 +199,11 @@ export default function Dashboard() {
   };
 
   const revokeInvite = async (inviteId) => {
-    // Replaces the German confirm(). English-only, consistent with rest of UI.
-    if (!window.confirm("Revoke this invitation? The recipient won't be able to accept it anymore.")) {
+    if (
+      !window.confirm(
+        "Revoke this invitation? The recipient won't be able to accept it anymore."
+      )
+    ) {
       return;
     }
 
@@ -339,25 +359,25 @@ export default function Dashboard() {
   };
 
   // ---------------------------------------------------------------------------
-  // PRIORITY-DRIVEN DERIVED STATE.
+  // DERIVED STATE — the dashboard is split into two activation zones (make vs.
+  // join) plus a browse grid.
   //
-  // The dashboard renders sections in a fixed priority order. Each section
-  // only appears if its data exists. The order reflects "what does the user
-  // most need to act on right now?":
+  //   liveSessions      → the "On air" rail (join in one tap)
+  //   pendingInvites    → someone is waiting for a reply
+  //   otherSessions     → the browse grid (everything not currently live)
   //
-  //   1. Live sessions the user is host of OR has joined — jump back in
-  //   2. Pending received invitations — someone is waiting for a response
-  //   3. (For empty-state users only) prominent create-session prompt
-  //   4. All remaining sessions
-  //
-  // Filtering only applies to (4) — live and invitations are time-sensitive
-  // and shouldn't be hidden behind a public/private filter.
+  // First-run is keyed on sessions the user actually HOSTS, not just anything
+  // visible: a brand-new account still sees public radio rooms, but should be
+  // pushed to create their own.
   // ---------------------------------------------------------------------------
+  const isHostOf = (s) => isLoggedIn && userId && Number(userId) === s.hostId;
+
   const pendingInvites = receivedInvites.filter(
     (i) => !i.accepted_at && !i.revoked_at
   );
   const liveSessions = sessions.filter((s) => s.status === "live");
   const nonLiveSessions = sessions.filter((s) => s.status !== "live");
+  const ownedSessions = sessions.filter(isHostOf);
 
   const filteredOtherSessions = nonLiveSessions.filter((s) => {
     if (filterType === "public") return s.is_private !== 1;
@@ -365,9 +385,18 @@ export default function Dashboard() {
     return true;
   });
 
-  const totalSessions = sessions.length;
-  const hasZeroSessions = totalSessions === 0;
-  const pendingSentInvitesCount = sentInvites.filter((i) => i.status === "pending").length;
+  // Currently active playback session — wired to <usePlayback> in a later pass.
+  const activeSessionId = null;
+
+  const hasZeroSessions = sessions.length === 0;
+  // First-run = a logged-in host with no rooms of their own. If userId is
+  // somehow absent (ownership unknowable), fall back to "no sessions at all"
+  // so returning users aren't wrongly dropped back into the first-run hero.
+  const isFirstRun =
+    isLoggedIn && (userId ? ownedSessions.length === 0 : hasZeroSessions);
+  const pendingSentInvitesCount = sentInvites.filter(
+    (i) => i.status === "pending"
+  ).length;
 
   // === Auth guard ===
   if (!token && !guestToken) {
@@ -378,7 +407,9 @@ export default function Dashboard() {
   // Format a date relative to now ("today", "yesterday", "3 days ago", or date)
   const formatRelativeDate = (iso) => {
     const d = new Date(iso);
-    const diffDays = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.floor(
+      (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)
+    );
     if (diffDays === 0) return "today";
     if (diffDays === 1) return "yesterday";
     if (diffDays < 7) return `${diffDays} days ago`;
@@ -386,240 +417,371 @@ export default function Dashboard() {
   };
 
   // ---------------------------------------------------------------------------
-  // renderSessionRow — used in all session list contexts (live + regular).
-  // The list-row format works across all screen sizes and packs more useful
-  // info per item than the previous grid.
+  // The per-session overflow menu (QR / copy / delete). Shared by both the
+  // live cards and the browse-grid cards.
   //
-  // IMPORTANT: defined as a plain function returning JSX, NOT as a React
-  // component. Defining a component inside the parent (`const SessionRow = …`)
-  // would create a new component reference on every Dashboard render,
-  // causing React to unmount/remount every row. That tears down any open
-  // Headless UI `<Menu>` dropdown mid-interaction (e.g. when a socket
-  // `participant_count_update` event fires while the user is browsing
-  // the more-actions menu). A regular function bypasses React's component
-  // identity check — the returned JSX is treated as the parent's own
-  // children, so rows reconcile by position+key, and open menus stay open.
-  //
-  // emphasis: 'live' (glowing border) | 'normal' (subtle)
+  // IMPORTANT: this and the card renderers below are plain functions returning
+  // JSX, NOT nested components. A nested `const Card = …` would get a new
+  // identity on every Dashboard render, so React would unmount/remount every
+  // card — tearing down any open Headless UI <Menu> mid-interaction whenever a
+  // socket participant-count event fires. Plain functions reconcile by key.
   // ---------------------------------------------------------------------------
-  const renderSessionRow = (s, emphasis = "normal") => {
-    const isHost = isLoggedIn && userId && Number(userId) === s.hostId;
-    const isLive = s.status === "live";
+  const renderCardMenu = (s) => (
+    <Menu as="div" className="relative">
+      <Menu.Button
+        onClick={(e) => e.stopPropagation()}
+        className="grid place-items-center w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+        title="More actions"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </Menu.Button>
+      <Transition
+        as={Fragment}
+        enter="transition ease-out duration-100"
+        enterFrom="opacity-0 scale-95"
+        enterTo="opacity-100 scale-100"
+        leave="transition ease-in duration-75"
+        leaveFrom="opacity-100 scale-100"
+        leaveTo="opacity-0 scale-95"
+      >
+        <Menu.Items className="absolute right-0 mt-2 w-44 rounded-xl bg-slate-900 border border-white/10 shadow-xl overflow-hidden z-30">
+          <Menu.Item>
+            {({ active }) => (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQrModalSession(s);
+                }}
+                className={`${
+                  active ? "bg-white/5" : ""
+                } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
+              >
+                <QrCode className="w-4 h-4 text-purple-400" />
+                Show QR code
+              </button>
+            )}
+          </Menu.Item>
+          <Menu.Item>
+            {({ active }) => (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copyJoinLink(s.id);
+                }}
+                className={`${
+                  active ? "bg-white/5" : ""
+                } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
+              >
+                <Copy className="w-4 h-4 text-purple-400" />
+                Copy share link
+              </button>
+            )}
+          </Menu.Item>
+          {isHostOf(s) && (
+            <>
+              <div className="h-px bg-white/5" />
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteModal(s.id);
+                    }}
+                    className={`${
+                      active ? "bg-red-500/10" : ""
+                    } flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-400`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete session
+                  </button>
+                )}
+              </Menu.Item>
+            </>
+          )}
+        </Menu.Items>
+      </Transition>
+    </Menu>
+  );
+
+  // ---------------------------------------------------------------------------
+  // Live "on air" card — the join path. The session the user is currently
+  // listening to (activeSessionId) gets an emerald "You're listening" state so
+  // returning to the dashboard always shows where you are.
+  // ---------------------------------------------------------------------------
+  const renderLiveCard = (s) => {
+    const isCurrent = activeSessionId != null && s.id === activeSessionId;
 
     return (
       <motion.div
         key={s.id}
         layout
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, x: -10 }}
-        whileHover={{ scale: 1.005 }}
-        whileTap={{ scale: 0.995 }}
+        exit={{ opacity: 0, y: -8 }}
+        whileHover={{ y: -2 }}
         onClick={() => openSession(s)}
-        className={`group cursor-pointer rounded-2xl border transition-all ${
-          emphasis === "live"
-            ? "bg-gradient-to-r from-green-500/15 via-emerald-500/10 to-transparent border-green-500/30 hover:border-green-400/50 shadow-lg shadow-green-500/10"
-            : "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
+        className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-4 transition-colors ${
+          isCurrent
+            ? "border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 via-emerald-500/10 to-transparent shadow-lg shadow-emerald-500/20"
+            : "border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 via-white/[0.03] to-transparent hover:border-emerald-400/50"
         }`}
       >
-        <div className="flex items-center gap-3 p-3 sm:p-4">
-          {/* Status indicator */}
-          <div className="shrink-0">
-            {isLive ? (
-              <div className="relative w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
-                <Play className="w-5 h-5 text-green-300" fill="currentColor" />
-                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 ring-2 ring-slate-950">
-                  <span className="absolute inset-0 rounded-full bg-green-400 animate-ping" />
-                </span>
-              </div>
+        {/* ambient on-air glow */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/20 blur-2xl"
+        />
+
+        <div className="relative flex items-start justify-between gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+            <LiveBars className="h-3" />
+            {isCurrent ? "You're listening" : "On air"}
+          </span>
+          <span onClick={(e) => e.stopPropagation()}>{renderCardMenu(s)}</span>
+        </div>
+
+        <h3 className="relative mt-3 line-clamp-2 text-lg font-bold leading-tight text-emerald-50">
+          {s.title}
+        </h3>
+
+        <div className="relative mt-3 flex items-center justify-between gap-2">
+          <LiveViewerCount count={s.participant_count || 0} live />
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isCurrent
+                ? "bg-emerald-400 text-emerald-950"
+                : "bg-emerald-500/20 text-emerald-200 group-hover:bg-emerald-500 group-hover:text-emerald-950"
+            }`}
+          >
+            {isCurrent ? (
+              <>
+                <Headphones className="h-4 w-4" />
+                Back to session
+              </>
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
-                <Music className="w-5 h-5 text-white/40" />
-              </div>
+              <>
+                <Play className="h-4 w-4" fill="currentColor" />
+                Join
+              </>
             )}
-          </div>
-
-          {/* Title + meta */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-0.5">
-              <h3 className={`font-semibold text-sm sm:text-base truncate ${
-                isLive ? "text-green-50" : "group-hover:text-purple-200"
-              } transition-colors`}>
-                {s.title}
-              </h3>
-              {s.is_private === 1 && (
-                <Lock className="w-3 h-3 text-white/40 shrink-0" />
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-white/50">
-              <LiveViewerCount count={s.participant_count || 0} live={isLive} />
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {formatRelativeDate(s.created_at)}
-              </span>
-              {isLive && (
-                <span className="text-green-400 font-medium uppercase tracking-wider text-[10px]">
-                  Live now
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                copyJoinLink(s.id);
-              }}
-              className={`p-2 rounded-lg transition-colors ${
-                copiedId === s.id
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-white/5 hover:bg-white/10 text-white/60 hover:text-white/90"
-              }`}
-              title="Copy share link"
-            >
-              {copiedId === s.id ? (
-                <CheckCircle className="w-4 h-4" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
-
-            {/* Overflow menu — protects against accidental Delete clicks */}
-            <Menu as="div" className="relative">
-              <Menu.Button
-                onClick={(e) => e.stopPropagation()}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white/90 transition-colors"
-                title="More actions"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </Menu.Button>
-              <Transition
-                as={Fragment}
-                enter="transition ease-out duration-100"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="transition ease-in duration-75"
-                leaveFrom="opacity-100 scale-100"
-                leaveTo="opacity-0 scale-95"
-              >
-                <Menu.Items className="absolute right-0 mt-2 w-44 rounded-xl bg-slate-900 border border-white/10 shadow-xl overflow-hidden z-30">
-                  <Menu.Item>
-                    {({ active }) => (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setQrModalSession(s);
-                        }}
-                        className={`${
-                          active ? "bg-white/5" : ""
-                        } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
-                      >
-                        <QrCode className="w-4 h-4 text-purple-400" />
-                        Show QR code
-                      </button>
-                    )}
-                  </Menu.Item>
-                  <Menu.Item>
-                    {({ active }) => (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyJoinLink(s.id);
-                        }}
-                        className={`${
-                          active ? "bg-white/5" : ""
-                        } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
-                      >
-                        <Copy className="w-4 h-4 text-purple-400" />
-                        Copy share link
-                      </button>
-                    )}
-                  </Menu.Item>
-                  {isHost && (
-                    <>
-                      <div className="h-px bg-white/5" />
-                      <Menu.Item>
-                        {({ active }) => (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowDeleteModal(s.id);
-                            }}
-                            className={`${
-                              active ? "bg-red-500/10" : ""
-                            } flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-400`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete session
-                          </button>
-                        )}
-                      </Menu.Item>
-                    </>
-                  )}
-                </Menu.Items>
-              </Transition>
-            </Menu>
-
-            <ArrowRight className="w-4 h-4 text-white/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all ml-1 hidden sm:block" />
-          </div>
+          </span>
         </div>
       </motion.div>
     );
   };
 
+  // ---------------------------------------------------------------------------
+  // Browse-grid card — compact tile for a non-live session.
+  // ---------------------------------------------------------------------------
+  const renderSessionCard = (s) => {
+    const priv = s.is_private === 1;
+
+    return (
+      <motion.div
+        key={s.id}
+        layout
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        whileHover={{ y: -2 }}
+        onClick={() => openSession(s)}
+        className="group flex cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+              priv
+                ? "bg-pink-500/15 text-pink-300"
+                : "bg-purple-500/15 text-purple-300"
+            }`}
+          >
+            {priv ? (
+              <Lock className="h-3 w-3" />
+            ) : (
+              <Globe className="h-3 w-3" />
+            )}
+            {priv ? "Private" : "Public"}
+          </span>
+          {renderCardMenu(s)}
+        </div>
+
+        <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-white group-hover:text-purple-100">
+          {s.title}
+        </h3>
+
+        <div className="mt-3 flex items-center justify-between gap-2 text-xs text-white/45">
+          <LiveViewerCount count={s.participant_count || 0} />
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatRelativeDate(s.created_at)}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-center gap-1.5 border-t border-white/5 pt-2.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              copyJoinLink(s.id);
+            }}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
+              copiedId === s.id
+                ? "bg-emerald-500/20 text-emerald-300"
+                : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {copiedId === s.id ? (
+              <>
+                <CheckCircle className="h-3.5 w-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                Share
+              </>
+            )}
+          </button>
+          <span className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white/60 transition-colors group-hover:bg-purple-500/20 group-hover:text-purple-200">
+            Open
+            <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // ---------------------------------------------------------------------------
+  // The create form — reused in both the compact console hero and the big
+  // first-run hero. `hero` scales the input/CTA up for the first-run layout.
+  // ---------------------------------------------------------------------------
+  const renderCreateForm = ({ hero = false } = {}) => (
+    <>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          createSession();
+        }}
+        className="flex flex-col gap-2.5"
+      >
+        <input
+          type="text"
+          placeholder={
+            hero
+              ? "Name your room — e.g. Friday night party, Road trip 2026…"
+              : "Name your session…"
+          }
+          className={`w-full rounded-xl border border-white/10 bg-white/5 placeholder-white/30 transition-colors focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 ${
+            hero ? "px-4 py-3.5 text-base" : "px-4 py-3 text-sm"
+          }`}
+          value={newSessionTitle}
+          onChange={(e) => setNewSessionTitle(e.target.value)}
+          disabled={loading}
+        />
+
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="grid flex-1 grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+            <button
+              type="button"
+              onClick={() => setIsPrivate(false)}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all ${
+                !isPrivate
+                  ? "bg-purple-500 text-white shadow-sm"
+                  : "text-white/60 hover:bg-white/5"
+              }`}
+            >
+              <Globe className="h-4 w-4" />
+              Public
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPrivate(true)}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all ${
+                isPrivate
+                  ? "bg-pink-500 text-white shadow-sm"
+                  : "text-white/60 hover:bg-white/5"
+              }`}
+            >
+              <Lock className="h-4 w-4" />
+              Private
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !newSessionTitle.trim()}
+            className={`flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 font-semibold text-white transition-all hover:shadow-lg hover:shadow-purple-500/30 disabled:cursor-not-allowed disabled:opacity-40 ${
+              hero ? "px-6 py-3.5 text-base" : "px-5 py-2.5 text-sm"
+            }`}
+          >
+            <Sparkles className="h-4 w-4" />
+            {loading ? "Creating…" : "Create session"}
+          </button>
+        </div>
+      </form>
+
+      <p className="mt-3 flex items-center gap-1.5 text-xs text-white/45">
+        {isPrivate ? (
+          <>
+            <Lock className="h-3 w-3 text-pink-300" />
+            Private — only people you invite can join.
+          </>
+        ) : (
+          <>
+            <Globe className="h-3 w-3 text-purple-300" />
+            Public — anyone with the link can join.
+          </>
+        )}
+      </p>
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
       {/* Background atmosphere */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-purple-600/20 rounded-full filter blur-[120px]"></div>
-        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-pink-600/15 rounded-full filter blur-[100px]"></div>
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-20 left-1/4 h-[500px] w-[500px] rounded-full bg-purple-600/20 blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full bg-pink-600/15 blur-[100px]" />
       </div>
 
-      {/* ──────────────────────────────────────────────────────────────────────
-          HEADER — slim, persistent. Identity + profile only. Action buttons
-          (create session, invitations) were moved into the body where they
-          belong, since they're not navigation-level.
-         ──────────────────────────────────────────────────────────────────── */}
+      {/* ── HEADER — slim, full-width identity bar ─────────────────────────── */}
       <motion.header
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.4 }}
-        className="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/80 border-b border-white/5"
+        className="sticky top-0 z-40 border-b border-white/5 bg-slate-950/80 backdrop-blur-xl"
       >
-        <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
-              <Music className="w-5 h-5" />
+            <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 p-1.5">
+              <Music className="h-5 w-5" />
             </div>
-            <span className="font-bold text-lg">TuneVote</span>
+            <span className="text-lg font-bold">TuneVote</span>
           </div>
 
           <Menu as="div" className="relative">
-            <Menu.Button className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
-              <div className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/10">
+            <Menu.Button className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5 transition-colors hover:bg-white/10">
+              <div className="h-8 w-8 overflow-hidden rounded-full ring-2 ring-white/10">
                 {profileImage ? (
                   <img
                     src={profileImage}
                     alt="Profile"
-                    className="w-full h-full object-cover"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm font-bold">
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 text-sm font-bold">
                     {displayName.charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
-              <span className="font-medium text-sm hidden sm:block max-w-[120px] truncate">
+              <span className="hidden max-w-[120px] truncate text-sm font-medium sm:block">
                 {displayName}
               </span>
               {isGuest && (
-                <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded hidden sm:block">
+                <span className="hidden rounded bg-yellow-500/20 px-1.5 py-0.5 text-[10px] text-yellow-400 sm:block">
                   Guest
                 </span>
               )}
-              <ChevronDown className="w-4 h-4 text-white/50" />
+              <ChevronDown className="h-4 w-4 text-white/50" />
             </Menu.Button>
 
             <Transition
@@ -631,7 +793,7 @@ export default function Dashboard() {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Menu.Items className="absolute right-0 mt-2 w-48 rounded-xl bg-slate-900 border border-white/10 shadow-xl overflow-hidden">
+              <Menu.Items className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl">
                 {!isGuest && (
                   <Menu.Item>
                     {({ active }) => (
@@ -641,7 +803,7 @@ export default function Dashboard() {
                           active ? "bg-white/5" : ""
                         } flex w-full items-center gap-2 px-4 py-2.5 text-sm`}
                       >
-                        <User className="w-4 h-4 text-purple-400" />
+                        <User className="h-4 w-4 text-purple-400" />
                         My profile
                       </button>
                     )}
@@ -657,7 +819,7 @@ export default function Dashboard() {
                         } flex w-full items-center justify-between gap-2 px-4 py-2.5 text-sm`}
                       >
                         <span className="flex items-center gap-2">
-                          <Send className="w-4 h-4 text-purple-400" />
+                          <Send className="h-4 w-4 text-purple-400" />
                           Sent invites
                         </span>
                         <span className="text-xs text-white/40">
@@ -675,7 +837,7 @@ export default function Dashboard() {
                         active ? "bg-red-500/10" : ""
                       } flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-400`}
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="h-4 w-4" />
                       {isGuest ? "Leave" : "Log out"}
                     </button>
                   )}
@@ -686,18 +848,17 @@ export default function Dashboard() {
         </div>
       </motion.header>
 
-      <main className="relative z-10 max-w-4xl mx-auto px-4 py-6 pb-32 space-y-6">
-
-        {/* Guest banner — only shown for guests */}
+      <main className="relative z-10 mx-auto max-w-7xl px-4 pb-40 pt-5 sm:px-6">
+        {/* Guest banner */}
         {isGuest && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-3 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl flex items-center justify-between gap-3"
+            className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-yellow-500/20 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 p-3"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertCircle className="w-5 h-5 text-yellow-400 shrink-0" />
-              <p className="text-sm text-yellow-200 truncate">
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertCircle className="h-5 w-5 shrink-0 text-yellow-400" />
+              <p className="truncate text-sm text-yellow-200">
                 <span className="font-medium">Guest mode</span>
                 <span className="hidden sm:inline">
                   {" "}
@@ -707,54 +868,159 @@ export default function Dashboard() {
             </div>
             <button
               onClick={handleRegister}
-              className="px-3 py-1.5 bg-yellow-500 text-slate-900 font-semibold text-sm rounded-lg hover:bg-yellow-400 transition-colors shrink-0 flex items-center gap-1"
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-yellow-500 px-3 py-1.5 text-sm font-semibold text-slate-900 transition-colors hover:bg-yellow-400"
             >
-              <UserPlus className="w-4 h-4" />
+              <UserPlus className="h-4 w-4" />
               <span className="hidden sm:inline">Sign up</span>
             </button>
           </motion.div>
         )}
 
-        {/* ──────────────────────────────────────────────────────────────────
-            HERO PRIORITY 1: Live sessions.
-            If anything is live, surface it at the top. Highest-attention
-            position. Users with a live session almost certainly want to
-            return to it immediately.
-           ──────────────────────────────────────────────────────────────── */}
-        {liveSessions.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <Radio className="w-4 h-4 text-green-400" />
-              <h2 className="text-sm font-semibold text-green-300 uppercase tracking-wider">
-                Live now
-              </h2>
-              <span className="text-xs text-white/40">
-                ({liveSessions.length})
-              </span>
+        {/* ══════════════════════════════════════════════════════════════════
+            FIRST-RUN HERO — a brand-new host lands here. One unmistakable job:
+            create the first room. Live public rooms (if any) sit underneath as
+            an instant alternative.
+           ══════════════════════════════════════════════════════════════════ */}
+        {isFirstRun && (
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative overflow-hidden rounded-3xl border border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-fuchsia-500/10 to-pink-500/10 p-6 shadow-glass-lg sm:p-10"
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-pink-500/20 blur-3xl"
+            />
+            <div className="relative mx-auto max-w-2xl text-center">
+              <motion.div
+                animate={{ rotate: [0, 8, -8, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                className="mb-4 inline-flex rounded-2xl border border-purple-400/40 bg-gradient-to-br from-purple-500/30 to-pink-500/30 p-3.5"
+              >
+                <Sparkles className="h-7 w-7 text-purple-100" />
+              </motion.div>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                Create your first session
+              </h1>
+              <p className="mx-auto mt-2 max-w-md text-sm text-white/60 sm:text-base">
+                Name your room, pick Public or Private, and your friends vote on
+                what plays next — live, together.
+              </p>
+
+              <div className="mx-auto mt-6 max-w-xl text-left">
+                {renderCreateForm({ hero: true })}
+              </div>
             </div>
-            <div className="space-y-2">
-              {liveSessions.map((s) => renderSessionRow(s, "live"))}
+          </motion.section>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════
+            CONSOLE — two side-by-side activation zones (make vs. join) for
+            returning hosts. Uses the full desktop width.
+           ══════════════════════════════════════════════════════════════════ */}
+        {isLoggedIn && !isFirstRun && (
+          <section className="grid gap-4 lg:grid-cols-5">
+            {/* CREATE (dominant, purple) */}
+            <div className="rounded-3xl border border-purple-400/25 bg-gradient-to-br from-purple-500/15 via-fuchsia-500/8 to-transparent p-5 shadow-glass lg:col-span-3">
+              <div className="mb-3 flex items-center gap-2">
+                <div className="rounded-lg bg-purple-500/20 p-1.5">
+                  <Plus className="h-4 w-4 text-purple-300" />
+                </div>
+                <h2 className="text-lg font-bold tracking-tight">
+                  Start a session
+                </h2>
+              </div>
+              {renderCreateForm()}
+            </div>
+
+            {/* JOIN / ON AIR (emerald) */}
+            <div className="flex flex-col rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/8 to-transparent p-5 lg:col-span-2">
+              <div className="mb-3 flex items-center gap-2">
+                <Radio className="h-4 w-4 text-emerald-400" />
+                <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+                  On air
+                </h2>
+                {liveSessions.length > 0 && (
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                    {liveSessions.length}
+                  </span>
+                )}
+              </div>
+
+              {liveSessions.length > 0 ? (
+                <div className="flex max-h-[19rem] flex-col gap-2.5 overflow-y-auto pr-1">
+                  <AnimatePresence>
+                    {liveSessions.map((s) => renderLiveCard(s))}
+                  </AnimatePresence>
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center">
+                  <Radio className="mb-2 h-6 w-6 text-white/25" />
+                  <p className="text-sm font-medium text-white/60">
+                    No rooms are live right now
+                  </p>
+                  <p className="mt-0.5 text-xs text-white/40">
+                    Start one and your friends can jump in.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         )}
 
-        {/* ──────────────────────────────────────────────────────────────────
-            HERO PRIORITY 2: Pending invitations.
-            Someone is waiting for the user's response. Don't bury this.
-            Inline Accept / Decline — no extra clicks to act.
-           ──────────────────────────────────────────────────────────────── */}
-        {!isGuest && pendingInvites.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <Mail className="w-4 h-4 text-pink-400" />
-              <h2 className="text-sm font-semibold text-pink-300 uppercase tracking-wider">
-                Waiting for you
+        {/* ── First-run: live rooms to join underneath the hero ────────────── */}
+        {isFirstRun && liveSessions.length > 0 && (
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 px-1">
+              <Radio className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+                Or drop into a live room
               </h2>
-              <span className="text-xs text-white/40">
-                ({pendingInvites.length})
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                {liveSessions.length}
               </span>
             </div>
-            <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <AnimatePresence>
+                {liveSessions.map((s) => renderLiveCard(s))}
+              </AnimatePresence>
+            </div>
+          </section>
+        )}
+
+        {/* ── Guests can't create, but they can drop into any live room ────── */}
+        {isGuest && liveSessions.length > 0 && (
+          <section className="mt-1">
+            <div className="mb-3 flex items-center gap-2 px-1">
+              <Radio className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+                Live now
+              </h2>
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                {liveSessions.length}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <AnimatePresence>
+                {liveSessions.map((s) => renderLiveCard(s))}
+              </AnimatePresence>
+            </div>
+          </section>
+        )}
+
+        {/* ── INVITATIONS — someone is waiting for a reply ─────────────────── */}
+        {!isGuest && pendingInvites.length > 0 && (
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 px-1">
+              <Mail className="h-4 w-4 text-pink-400" />
+              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-pink-300">
+                Waiting for you
+              </h2>
+              <span className="rounded-full bg-pink-500/20 px-2 py-0.5 text-xs font-semibold text-pink-300">
+                {pendingInvites.length}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {pendingInvites.map((invite) => (
                 <motion.div
                   key={invite.id}
@@ -762,34 +1028,34 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -10 }}
-                  className="p-4 rounded-2xl bg-gradient-to-r from-pink-500/10 via-purple-500/8 to-transparent border border-pink-500/25"
+                  className="rounded-2xl border border-pink-500/25 bg-gradient-to-br from-pink-500/10 to-transparent p-4"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-pink-500/20 flex items-center justify-center shrink-0">
-                      <Mail className="w-5 h-5 text-pink-300" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pink-500/20">
+                      <Mail className="h-5 w-5 text-pink-300" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">
                         {invite.session_title}
                       </p>
-                      <p className="text-xs text-white/50 truncate">
+                      <p className="truncate text-xs text-white/50">
                         Invited by {invite.host_name}
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-3">
+                  <div className="mt-3 flex gap-2">
                     <button
                       onClick={() => acceptInvite(invite.id)}
-                      className="flex-1 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-semibold text-sm hover:shadow-lg hover:shadow-green-500/25 transition-all flex items-center justify-center gap-1.5"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 py-2 text-sm font-semibold text-white transition-all hover:shadow-lg hover:shadow-green-500/25"
                     >
-                      <CheckCircle className="w-4 h-4" />
+                      <CheckCircle className="h-4 w-4" />
                       Accept
                     </button>
                     <button
                       onClick={() => rejectInvite(invite.id)}
-                      className="flex-1 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 py-2 text-sm font-medium text-white/80 transition-colors hover:bg-white/10"
                     >
-                      <XCircle className="w-4 h-4" />
+                      <XCircle className="h-4 w-4" />
                       Decline
                     </button>
                   </div>
@@ -799,250 +1065,131 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* ──────────────────────────────────────────────────────────────────
-            CREATE SESSION — always inline, but visually heroic when the user
-            has zero sessions, and compact when they already have some.
-
-            This collapses the previous "click to expand" panel into a single
-            zero-friction creation flow.
-           ──────────────────────────────────────────────────────────────── */}
-        {isLoggedIn && (
-          <section
-            className={
-              hasZeroSessions
-                ? "p-5 rounded-3xl bg-gradient-to-br from-purple-500/15 via-pink-500/10 to-transparent border border-purple-400/30"
-                : "p-4 rounded-2xl bg-white/[0.03] border border-white/10"
-            }
-          >
-            {hasZeroSessions && (
-              <div className="text-center mb-4">
-                <motion.div
-                  animate={{ rotate: [0, 8, -8, 0] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                  className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-purple-500/30 to-pink-500/30 border border-purple-400/40 mb-3"
-                >
-                  <Sparkles className="w-6 h-6 text-purple-200" />
-                </motion.div>
-                <h2 className="text-xl font-bold mb-1">Start your first session</h2>
-                <p className="text-sm text-white/60">
-                  Give it a name and invite your friends to vote on songs together.
-                </p>
-              </div>
-            )}
-
-            {!hasZeroSessions && (
-              <div className="flex items-center gap-2 mb-3 px-1">
-                <Plus className="w-4 h-4 text-purple-400" />
-                <h2 className="text-sm font-semibold text-white/80 uppercase tracking-wider">
-                  Create a session
-                </h2>
-              </div>
-            )}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                createSession();
-              }}
-              className="flex flex-col sm:flex-row gap-2"
-            >
-              <input
-                type="text"
-                placeholder={
-                  hasZeroSessions
-                    ? "e.g. Friday night party, Road trip 2026…"
-                    : "New session name…"
-                }
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 placeholder-white/30 focus:border-purple-400 focus:outline-none transition-colors text-sm"
-                value={newSessionTitle}
-                onChange={(e) => setNewSessionTitle(e.target.value)}
-                disabled={loading}
-              />
-              <div className="flex gap-2">
-                <div className="flex p-1 bg-white/5 rounded-xl border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setIsPrivate(false)}
-                    className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition-all ${
-                      !isPrivate
-                        ? "bg-purple-500 text-white shadow-sm"
-                        : "hover:bg-white/5 text-white/70"
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    Public
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsPrivate(true)}
-                    className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition-all ${
-                      isPrivate
-                        ? "bg-pink-500 text-white shadow-sm"
-                        : "hover:bg-white/5 text-white/70"
-                    }`}
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    Private
-                  </button>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading || !newSessionTitle.trim()}
-                  className="px-5 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl font-semibold text-sm flex items-center gap-2 hover:shadow-lg hover:shadow-purple-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  {loading ? "Creating…" : "Create"}
-                </button>
-              </div>
-            </form>
-
-            {hasZeroSessions && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-white/40">
-                <span className="flex items-center gap-1">
-                  <Globe className="w-3 h-3" />
-                  Public: anyone with the link
-                </span>
-                <span className="text-white/20">·</span>
-                <span className="flex items-center gap-1">
-                  <Lock className="w-3 h-3" />
-                  Private: invitation only
-                </span>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* ──────────────────────────────────────────────────────────────────
-            REGULAR SESSIONS LIST.
-            Only renders if there are non-live sessions. Filter UI appears
-            only above the threshold (FILTER_THRESHOLD) — for users with 1–4
-            sessions it's just noise.
-           ──────────────────────────────────────────────────────────────── */}
+        {/* ── BROWSE GRID — every non-live session, dense multi-column ──────── */}
         {nonLiveSessions.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-3 px-1 gap-3">
+          <section className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2">
-                <Radio className="w-4 h-4 text-purple-400" />
-                <h2 className="text-sm font-semibold text-white/80 uppercase tracking-wider">
+                <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-white/80">
                   {liveSessions.length > 0 ? "Other sessions" : "Your sessions"}
                 </h2>
-                <span className="text-xs text-white/40">
-                  ({filteredOtherSessions.length})
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/50">
+                  {filteredOtherSessions.length}
                 </span>
               </div>
 
-              {/* Filter only above threshold */}
               {nonLiveSessions.length >= FILTER_THRESHOLD && (
-                <div className="flex items-center gap-0.5 p-0.5 bg-white/5 rounded-lg border border-white/10">
+                <div className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-0.5">
                   <button
                     onClick={() => setFilterType("all")}
-                    className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                    className={`rounded-md px-2.5 py-1 text-xs transition-all ${
                       filterType === "all"
                         ? "bg-white/10 font-medium"
-                        : "hover:bg-white/5 text-white/60"
+                        : "text-white/60 hover:bg-white/5"
                     }`}
                   >
                     All
                   </button>
                   <button
                     onClick={() => setFilterType("public")}
-                    className={`px-2.5 py-1 rounded-md text-xs transition-all flex items-center gap-1 ${
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
                       filterType === "public"
                         ? "bg-white/10 font-medium"
-                        : "hover:bg-white/5 text-white/60"
+                        : "text-white/60 hover:bg-white/5"
                     }`}
                     title="Public sessions"
                   >
-                    <Globe className="w-3 h-3" />
+                    <Globe className="h-3 w-3" />
+                    <span className="hidden sm:inline">Public</span>
                   </button>
                   <button
                     onClick={() => setFilterType("private")}
-                    className={`px-2.5 py-1 rounded-md text-xs transition-all flex items-center gap-1 ${
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all ${
                       filterType === "private"
                         ? "bg-white/10 font-medium"
-                        : "hover:bg-white/5 text-white/60"
+                        : "text-white/60 hover:bg-white/5"
                     }`}
                     title="Private sessions"
                   >
-                    <Lock className="w-3 h-3" />
+                    <Lock className="h-3 w-3" />
+                    <span className="hidden sm:inline">Private</span>
                   </button>
                 </div>
               )}
             </div>
 
             {filteredOtherSessions.length === 0 ? (
-              <div className="py-8 text-center text-white/40 text-sm">
+              <div className="py-10 text-center text-sm text-white/40">
                 No sessions match this filter.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <AnimatePresence>
-                  {filteredOtherSessions.map((s) => renderSessionRow(s))}
+                  {filteredOtherSessions.map((s) => renderSessionCard(s))}
                 </AnimatePresence>
               </div>
             )}
           </section>
         )}
 
-        {/* Guest empty-state when not logged in and zero sessions visible */}
+        {/* Guest empty-state — no sessions visible at all */}
         {isGuest && hasZeroSessions && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center py-12"
+            className="py-12 text-center"
           >
-            <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
-              <Music className="w-10 h-10 text-white/20" />
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-white/5">
+              <Music className="h-10 w-10 text-white/20" />
             </div>
-            <p className="text-white/60 mb-1 font-medium">No sessions yet</p>
-            <p className="text-sm text-white/40 mb-4">
-              Join a session via a shared link, or create an account to host your own.
+            <p className="mb-1 font-medium text-white/60">No sessions yet</p>
+            <p className="mb-4 text-sm text-white/40">
+              Join a session via a shared link, or create an account to host
+              your own.
             </p>
             <button
               onClick={handleRegister}
-              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl font-medium text-sm inline-flex items-center gap-2"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-medium"
             >
-              <UserPlus className="w-4 h-4" />
+              <UserPlus className="h-4 w-4" />
               Create an account
             </button>
           </motion.div>
         )}
       </main>
 
-      {/* ──────────────────────────────────────────────────────────────────────
-          QR Code Modal
-         ──────────────────────────────────────────────────────────────────── */}
+      {/* ── QR Code Modal ────────────────────────────────────────────────── */}
       <AnimatePresence>
         {qrModalSession && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
             onClick={() => setQrModalSession(null)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl text-center"
+              className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 text-center shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Scan to Join</h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-semibold">Scan to join</h3>
                 <button
                   onClick={() => setQrModalSession(null)}
-                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                  className="rounded-lg p-1.5 transition-colors hover:bg-white/10"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <p className="text-sm text-white/60 mb-4 truncate">
+              <p className="mb-4 truncate text-sm text-white/60">
                 {qrModalSession.title}
               </p>
 
-              <div className="bg-white p-4 rounded-2xl inline-block mb-4">
+              <div className="mb-4 inline-block rounded-2xl bg-white p-4">
                 <QRCodeCanvas
                   value={`${window.location.origin}/session/${qrModalSession.id}`}
                   size={200}
@@ -1055,50 +1202,48 @@ export default function Dashboard() {
                   copyJoinLink(qrModalSession.id);
                   setQrModalSession(null);
                 }}
-                className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-purple-500/25 transition-all"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 py-2.5 text-sm font-medium transition-all hover:shadow-lg hover:shadow-purple-500/25"
               >
-                <Copy className="w-4 h-4" />
-                Copy Link
+                <Copy className="h-4 w-4" />
+                Copy link
               </button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ──────────────────────────────────────────────────────────────────────
-          Sent Invitations Modal (accessed via profile menu)
-         ──────────────────────────────────────────────────────────────────── */}
+      {/* ── Sent Invitations Modal ───────────────────────────────────────── */}
       <AnimatePresence>
         {showSentInvitesModal && !isGuest && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-4 backdrop-blur-sm sm:items-center"
             onClick={() => setShowSentInvitesModal(false)}
           >
             <motion.div
               initial={{ scale: 0.95, y: 16 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 16 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-white/10 shadow-2xl max-h-[80vh] overflow-y-auto"
+              className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-5">
+              <div className="mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Send className="w-5 h-5 text-purple-400" />
+                  <Send className="h-5 w-5 text-purple-400" />
                   <h3 className="font-semibold">Sent invitations</h3>
                 </div>
                 <button
                   onClick={() => setShowSentInvitesModal(false)}
-                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                  className="rounded-lg p-1.5 transition-colors hover:bg-white/10"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
               {sentInvites.length === 0 ? (
-                <p className="text-sm text-white/40 py-4 text-center">
+                <p className="py-4 text-center text-sm text-white/40">
                   You haven't sent any invitations yet.
                 </p>
               ) : (
@@ -1110,22 +1255,22 @@ export default function Dashboard() {
 
                     switch (invite.status) {
                       case "accepted":
-                        statusIcon = <CheckCircle className="w-3.5 h-3.5" />;
+                        statusIcon = <CheckCircle className="h-3.5 w-3.5" />;
                         statusColor = "text-green-400";
                         statusLabel = "Accepted";
                         break;
                       case "rejected":
-                        statusIcon = <XCircle className="w-3.5 h-3.5" />;
+                        statusIcon = <XCircle className="h-3.5 w-3.5" />;
                         statusColor = "text-red-400";
                         statusLabel = "Declined";
                         break;
                       case "revoked":
-                        statusIcon = <Ban className="w-3.5 h-3.5" />;
+                        statusIcon = <Ban className="h-3.5 w-3.5" />;
                         statusColor = "text-red-400";
                         statusLabel = "Revoked";
                         break;
                       default:
-                        statusIcon = <Clock className="w-3.5 h-3.5" />;
+                        statusIcon = <Clock className="h-3.5 w-3.5" />;
                         statusColor = "text-yellow-400";
                         statusLabel = "Pending";
                         break;
@@ -1134,18 +1279,20 @@ export default function Dashboard() {
                     return (
                       <div
                         key={invite.id}
-                        className="p-3 rounded-xl bg-white/5 border border-white/10"
+                        className="rounded-xl border border-white/10 bg-white/5 p-3"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">
+                            <p className="truncate text-sm font-medium">
                               {invite.session_title}
                             </p>
-                            <p className="text-xs text-white/40 truncate">
+                            <p className="truncate text-xs text-white/40">
                               To: {invite.email}
                             </p>
                           </div>
-                          <span className={`${statusColor} flex items-center gap-1 text-xs shrink-0`}>
+                          <span
+                            className={`${statusColor} flex shrink-0 items-center gap-1 text-xs`}
+                          >
                             {statusIcon}
                             {statusLabel}
                           </span>
@@ -1153,7 +1300,7 @@ export default function Dashboard() {
                         {invite.status === "pending" && (
                           <button
                             onClick={() => revokeInvite(invite.id)}
-                            className="mt-2 w-full py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                            className="mt-2 w-full rounded-lg bg-red-500/10 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
                           >
                             Revoke invitation
                           </button>
@@ -1168,46 +1315,45 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* ──────────────────────────────────────────────────────────────────────
-          Delete Modal
-         ──────────────────────────────────────────────────────────────────── */}
+      {/* ── Delete Modal ─────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showDeleteModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
             onClick={() => setShowDeleteModal(null)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-white/10 shadow-2xl"
+              className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 rounded-xl bg-red-500/20">
-                  <AlertCircle className="w-5 h-5 text-red-400" />
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-xl bg-red-500/20 p-2.5">
+                  <AlertCircle className="h-5 w-5 text-red-400" />
                 </div>
                 <h3 className="text-lg font-semibold">Delete session?</h3>
               </div>
 
-              <p className="text-sm text-white/60 mb-6">
-                This action cannot be undone. All participants will be removed and the session history will be lost.
+              <p className="mb-6 text-sm text-white/60">
+                This can't be undone. All participants will be removed and the
+                session history will be lost.
               </p>
 
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowDeleteModal(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-medium text-sm transition-all"
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-medium transition-all hover:bg-white/10"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => deleteSession(showDeleteModal)}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 font-medium text-sm transition-all"
+                  className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-medium transition-all hover:bg-red-600"
                 >
                   Delete
                 </button>
