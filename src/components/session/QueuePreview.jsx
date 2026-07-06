@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { ListMusic, ChevronUp, ChevronDown, Timer } from "lucide-react";
+import Avatar from "../Avatar";
 
 // Compact "up next" list: next 3 items by default, expandable to the full
 // queue, plus the host's add-a-break button.
@@ -73,9 +74,16 @@ const QueuePreview = ({
                   ? `${item.description || "Pause"} · ${item.duration}s`
                   : item.title}
               </p>
-              <p className="text-xs text-white/40 truncate">
-                {item.addedBy || "Guest"}
-              </p>
+              <span className="mt-0.5 flex items-center gap-1.5">
+                <Avatar
+                  userId={item.added_by}
+                  name={item.addedBy}
+                  size={16}
+                />
+                <span className="truncate text-xs text-white/40">
+                  {item.addedBy || "Guest"}
+                </span>
+              </span>
             </div>
             {isCurrent && (
               <span className="text-[10px] uppercase tracking-wider font-bold text-green-400 shrink-0">

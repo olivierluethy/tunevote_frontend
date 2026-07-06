@@ -12,6 +12,7 @@ import NowPlayingCard from "./session/NowPlayingCard";
 import VotingBanner from "./session/VotingBanner";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
+import Avatar from "./Avatar";
 import { QRCodeCanvas } from "qrcode.react";
 import io from "socket.io-client";
 import unidecode from "unidecode";
@@ -1088,6 +1089,16 @@ const SessionPage = () => {
   // with an inline explanation so users don't think the UI is broken.
   const canAddSongs = !sessionLive || votingPhase?.phase === "suggestion";
 
+  // Reduce friction on arrival: when there's nothing queued yet (e.g. the host
+  // just created the room and was dropped straight in), focus the add-song
+  // input so they can start building the queue without hunting for it.
+  useEffect(() => {
+    if (stage === "empty" && canAddSongs) {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [stage, canAddSongs]);
+
   // Guest Modal
   if (showGuestModal) {
     return (
@@ -1206,7 +1217,14 @@ const SessionPage = () => {
           Keeping the input at one fixed JSX position lets React reconcile it
           as the same DOM node across stage transitions.
          ──────────────────────────────────────────────────────────────────── */}
-      <main className="relative z-10 pb-32 max-w-2xl mx-auto">
+      {/* Full-width workspace: a primary action/now-playing column beside a
+          persistent queue rail, so every stage fills the viewport instead of
+          floating a small card in empty space. Collapses to one column on
+          mobile. */}
+      <main className="relative z-10 mx-auto max-w-6xl pb-32 pt-2">
+        <div className="grid lg:grid-cols-3 lg:items-start lg:gap-x-4 xl:gap-x-8">
+          {/* ── PRIMARY COLUMN — hero / now-playing / add songs / suggestions ── */}
+          <div className="min-w-0 lg:col-span-2">
 
         {/* HERO SECTION — varies by stage, sits ABOVE the stable search input */}
 
@@ -1371,39 +1389,50 @@ const SessionPage = () => {
                     key={song.id}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`p-3 rounded-2xl flex items-center gap-3 ${
+                    className={`relative flex items-center gap-3 overflow-hidden rounded-2xl p-3 ${
                       song.itemSource === "ai"
-                        ? "bg-purple-500/10 border border-purple-500/30"
-                        : "bg-white/5 border border-white/10"
+                        ? "border border-purple-400/40 bg-gradient-to-r from-purple-500/15 via-fuchsia-500/10 to-transparent shadow-[0_0_22px_-8px_rgba(168,85,247,0.6)]"
+                        : "border border-white/10 bg-white/5"
                     }`}
                   >
+                    {song.itemSource === "ai" && (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-purple-500/25 blur-2xl"
+                      />
+                    )}
                     {song.itemType === "music" ? (
                       <img
                         src={song.thumbnail}
                         alt=""
-                        className="w-12 h-12 rounded-xl object-cover shrink-0"
+                        className="h-12 w-12 shrink-0 rounded-xl object-cover"
                       />
                     ) : (
-                      <div className="w-12 h-12 rounded-xl bg-yellow-500/20 flex items-center justify-center shrink-0">
-                        <Timer className="w-5 h-5 text-yellow-400" />
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-yellow-500/20">
+                        <Timer className="h-5 w-5 text-yellow-400" />
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">
+                    <div className="relative min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
                         {song.itemType === "pause"
                           ? `${song.description || "Pause"} · ${song.duration}s break`
                           : song.title}
                       </p>
-                      <p className="text-xs text-white/40 flex items-center gap-1">
-                        {song.itemSource === "ai" ? (
-                          <>
-                            <Sparkles className="w-3 h-3 text-purple-400" />
-                            AI suggestion
-                          </>
-                        ) : (
-                          song.addedBy
-                        )}
-                      </p>
+                      {song.itemSource === "ai" ? (
+                        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-200">
+                          <Sparkles className="h-3 w-3" />
+                          AI pick
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-white/40">
+                          <Avatar
+                            userId={song.addedById}
+                            name={song.addedBy}
+                            size={16}
+                          />
+                          <span className="truncate">{song.addedBy}</span>
+                        </span>
+                      )}
                     </div>
                     {votingPhase?.phase === "voting" ? (
                       <button
@@ -1487,44 +1516,57 @@ const SessionPage = () => {
           </section>
         )}
 
-        {/* Leave-live button — shown only in live + joined stages */}
-        {(stage === "live-playing" ||
-          stage === "live-suggesting" ||
-          stage === "live-voting" ||
-          stage === "live-idle") && (
-          <section className="px-4 py-2">
-            <button
-              onClick={leaveLive}
-              className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:bg-white/10 hover:text-white/80 transition-colors flex items-center justify-center gap-2"
-            >
-              <Pause className="w-4 h-4" />
-              Leave live playback (music keeps going for others)
-            </button>
-          </section>
-        )}
+          </div>
+          {/* ── END PRIMARY COLUMN ── */}
 
-        {/* ──────────────────────────────────────────────────────────────────
-            QUEUE PREVIEW — shown across all non-empty stages.
-            Compact: shows the next 3 unplayed items, with a tap-to-expand
-            for the full list. The previous design's always-visible
-            scrolling queue was attention-stealing.
-           ──────────────────────────────────────────────────────────────── */}
-        {stage !== "empty" && queuedSongs.length > 0 && (
-          <QueuePreview
-            queuedSongs={queuedSongs}
-            showAll={showAllQueue}
-            setShowAll={setShowAllQueue}
-            currentSong={currentSong}
-            isLiveJoined={isLiveJoined}
-            showBreakButton={
-              stage === "building" ||
-              stage === "ready" ||
-              stage === "live-suggesting"
-            }
-            canAddSongs={canAddSongs}
-            onAddBreak={() => setShowBreakModal(true)}
-          />
-        )}
+          {/* ── QUEUE RAIL — the up-next list as a persistent sidebar ── */}
+          <aside className="lg:col-span-1 lg:sticky lg:top-[4.5rem]">
+            {queuedSongs.length > 0 ? (
+              <QueuePreview
+                queuedSongs={queuedSongs}
+                showAll={showAllQueue}
+                setShowAll={setShowAllQueue}
+                currentSong={currentSong}
+                isLiveJoined={isLiveJoined}
+                showBreakButton={
+                  stage === "building" ||
+                  stage === "ready" ||
+                  stage === "live-suggesting"
+                }
+                canAddSongs={canAddSongs}
+                onAddBreak={() => setShowBreakModal(true)}
+              />
+            ) : (
+              <section className="px-4 pt-2 pb-3">
+                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+                  <ListMusic className="mx-auto mb-2 h-6 w-6 text-white/25" />
+                  <p className="text-sm font-medium text-white/60">
+                    Your queue is empty
+                  </p>
+                  <p className="mt-0.5 text-xs text-white/40">
+                    Add songs and they'll line up here.
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* Leave-live — leaves YOUR playback; music keeps going for others */}
+            {(stage === "live-playing" ||
+              stage === "live-suggesting" ||
+              stage === "live-voting" ||
+              stage === "live-idle") && (
+              <section className="px-4 pb-2">
+                <button
+                  onClick={leaveLive}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-white/60 transition-colors hover:bg-white/10 hover:text-white/80"
+                >
+                  <Pause className="h-4 w-4" />
+                  Leave live playback (music keeps going for others)
+                </button>
+              </section>
+            )}
+          </aside>
+        </div>
 
         {/* The hidden YouTube player is rendered once at the app root by
             PlaybackProvider so audio survives navigation. */}
