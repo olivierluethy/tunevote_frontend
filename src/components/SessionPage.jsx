@@ -64,7 +64,7 @@ import {
 const SOCKET_SERVER = `${API_BASE}/`;
 
 const SessionPage = () => {
-  const { sessionId } = useParams();
+  const { sessionId: routeId } = useParams();
   const navigate = useNavigate();
 
   // Playback (player, current song, volume, mute, voting, breaks) is owned by
@@ -87,6 +87,14 @@ const SessionPage = () => {
     setVolume: pbSetVolume,
     toggleMute: pbToggleMute,
   } = usePlayback();
+
+  // The URL param may be a long public_id. SessionPage resolves it to the
+  // numeric session id ONCE (in loadSessionData) and uses that numeric id for
+  // everything internal — all /sessions/:id/* calls, the socket, joinLive, and
+  // the "live joined" check — so the real-time/playback paths are unchanged.
+  // null until the first resolve completes.
+  const [numericId, setNumericId] = useState(null);
+  const sessionId = numericId;
   const isLiveJoined = activeSessionId === sessionId;
 
   const socketRef = useRef(null);
@@ -297,6 +305,7 @@ const SessionPage = () => {
   };
 
   const loadProposals = useCallback(async () => {
+    if (!sessionId) return;
     try {
       const res = await axios.get(
         `${API_BASE}/sessions/${sessionId}/proposals`,
@@ -392,14 +401,17 @@ const SessionPage = () => {
 
   const loadSessionData = useCallback(async () => {
     try {
-      const [sessRes, queueRes] = await Promise.all([
-        axios.get(`${API_BASE}/sessions/${sessionId}`, {
-          headers: getAuthHeaders(),
-        }),
-        axios.get(`${API_BASE}/sessions/${sessionId}/queue`, {
-          headers: getAuthHeaders(),
-        }),
-      ]);
+      // Resolve the (possibly public_id) route param to the numeric session
+      // first; every other call below uses the numeric id (numId).
+      const sessRes = await axios.get(`${API_BASE}/sessions/${routeId}`, {
+        headers: getAuthHeaders(),
+      });
+      const numId = String(sessRes.data.id);
+      setNumericId(numId);
+
+      const queueRes = await axios.get(`${API_BASE}/sessions/${numId}/queue`, {
+        headers: getAuthHeaders(),
+      });
 
       setSession(sessRes.data);
       setQueue(queueRes.data || []);
@@ -413,7 +425,7 @@ const SessionPage = () => {
       if (sessRes.data.is_private === 1) {
         try {
           const invitesRes = await axios.get(
-            `${API_BASE}/sessions/${sessionId}/invites/accepted`,
+            `${API_BASE}/sessions/${numId}/invites/accepted`,
             { headers: getAuthHeaders() }
           );
           setAcceptedInvites(invitesRes.data || []);
@@ -442,10 +454,10 @@ const SessionPage = () => {
         navigate("/dashboard");
       }
     }
-  }, [sessionId, userId, navigate]);
+  }, [routeId, userId, navigate]);
 
   const loadLiveParticipants = useCallback(async () => {
-    if (!session?.is_private) return;
+    if (!sessionId || !session?.is_private) return;
 
     try {
       const res = await axios.get(
@@ -483,6 +495,7 @@ const SessionPage = () => {
 
   // === Analytics: page view, idle detection, scroll, time on page ===
   useEffect(() => {
+    if (!sessionId) return;
     markTime(`session_page_${sessionId}`);
     trackPageView(`/session/${sessionId}`, "Session Page");
     trackEvent("session_page_viewed", {
@@ -510,6 +523,9 @@ const SessionPage = () => {
 
   useEffect(() => {
     if (!token && !guestToken) return;
+    // Only ever connect the socket with the resolved NUMERIC id — the server
+    // (rooms, emits, host-join) does not understand a public_id.
+    if (!sessionId) return;
 
     socketRef.current = io(SOCKET_SERVER, {
       query: { sessionId },

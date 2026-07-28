@@ -220,35 +220,39 @@ export default function UserDetail() {
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04 }}
-                    className="group flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] transition-colors"
                   >
-                    <span className="w-6 text-center text-sm font-bold text-white/30 group-hover:text-violet-300 transition-colors">
-                      {i + 1}
-                    </span>
-                    <img
-                      src={song.thumbnail}
-                      alt=""
-                      className="w-11 h-11 rounded-lg object-cover shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {song.title}
-                      </p>
-                      <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
-                          style={{
-                            width: `${Math.max(
-                              6,
-                              ((song.total_seconds || 0) / maxSong) * 100,
-                            )}%`,
-                          }}
-                        />
+                    <Link
+                      to={`/song/${song.video_id}`}
+                      className="group flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] transition-colors"
+                    >
+                      <span className="w-6 text-center text-sm font-bold text-white/30 group-hover:text-violet-300 transition-colors">
+                        {i + 1}
+                      </span>
+                      <img
+                        src={song.thumbnail}
+                        alt=""
+                        className="w-11 h-11 rounded-lg object-cover shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate group-hover:text-violet-100 transition-colors">
+                          {song.title}
+                        </p>
+                        <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+                            style={{
+                              width: `${Math.max(
+                                6,
+                                ((song.total_seconds || 0) / maxSong) * 100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-xs text-white/50 shrink-0 tabular-nums">
-                      {formatDuration(song.total_seconds)}
-                    </span>
+                      <span className="text-xs text-white/50 shrink-0 tabular-nums">
+                        {formatDuration(song.total_seconds)}
+                      </span>
+                    </Link>
                   </motion.div>
                 ))}
               </div>
