@@ -9,6 +9,8 @@ import {
 import axios from "axios";
 import io from "socket.io-client";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 // ---------------------------------------------------------------------------
 // GLOBAL PLAYBACK PROVIDER
 //
@@ -23,8 +25,8 @@ import io from "socket.io-client";
 // here; it no longer owns the player itself.
 // ---------------------------------------------------------------------------
 
-const API = "https://api.tunevote.com";
-const SOCKET_SERVER = "https://api.tunevote.com/";
+const API = API_BASE;
+const SOCKET_SERVER = `${API_BASE}/`;
 const MAX_PLAY_ATTEMPTS = 5;
 const PLACEHOLDER_TITLES = new Set(["", "Unknown", "Loading…"]);
 

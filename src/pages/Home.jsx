@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
   Play,
   Users,
@@ -69,7 +71,7 @@ export default function Home() {
   // ✅ handleJoinSession ruft die Backend-Route auf
   const handleJoinSession = async () => {
     try {
-      const res = await fetch("https://api.tunevote.com/join");
+      const res = await fetch(`${API_BASE}/join`);
       const data = await res.json();
 
       if (data.redirect) {

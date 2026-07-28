@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 export default function InviteRedirect() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -8,7 +10,7 @@ export default function InviteRedirect() {
   useEffect(() => {
   if (!token) return;
 
-  fetch(`https://api.tunevote.com/invite/${token}`, {
+  fetch(`${API_BASE}/invite/${token}`, {
     method: "GET",
     credentials: "include",
   })

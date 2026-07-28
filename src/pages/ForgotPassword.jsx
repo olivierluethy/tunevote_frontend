@@ -4,6 +4,8 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, ArrowLeft, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 export default function PasswordReset() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -17,7 +19,7 @@ export default function PasswordReset() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("https://api.tunevote.com/forgot-password", { email });
+      const res = await axios.post(`${API_BASE}/forgot-password`, { email });
       setMessage(res.data.message || "Reset link sent! Check your email.");
       setSuccess(true);
       setEmail("");

@@ -1,5 +1,6 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Music,
@@ -11,23 +12,40 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Users,
+  Send,
+  Headphones,
 } from "lucide-react";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+// Format a duration in seconds as "1h 23m 45s" (omitting empty leading units).
+const formatDuration = (totalSeconds) => {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const parts = [];
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (sec || parts.length === 0) parts.push(`${sec}s`);
+  return parts.join(" ");
+};
+
 export default function ArtistDetail() {
   const { artistId } = useParams();
+  const navigate = useNavigate();
 
   const [artist, setArtist] = useState(null);
   const [songs, setSongs] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [loggedUserData, setLoggedUserData] = useState(null);
 
   const [shouts, setShouts] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [replyToId, setReplyToId] = useState(null);
+  const [posting, setPosting] = useState(false);
 
   const token = localStorage.getItem("token");
   const userId = localStorage.getItem("userId");
@@ -55,13 +73,18 @@ export default function ArtistDetail() {
 
   const handleSend = async () => {
     if (!newMessage.trim()) return;
-    await axios.post(
-      `${API_URL}/artist/${artistId}/shouts`,
-      { message: newMessage },
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    setNewMessage("");
-    fetchShouts();
+    try {
+      setPosting(true);
+      await axios.post(
+        `${API_URL}/artist/${artistId}/shouts`,
+        { message: newMessage },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setNewMessage("");
+      fetchShouts();
+    } finally {
+      setPosting(false);
+    }
   };
 
   const handleLike = async (shoutId) => {
@@ -89,10 +112,11 @@ export default function ArtistDetail() {
       .map((s) => ({ ...s, replies: buildThread(list, s.id) }));
 
   const threadedShouts = buildThread(shouts);
+  const totalShouts = shouts.length;
 
   /* ---------------- SHOUT COMPONENT ---------------- */
 
-  function Shout({ shout, replies }) {
+  function Shout({ shout, replies, depth = 0 }) {
     const [replyMessage, setReplyMessage] = useState("");
     const [showReplies, setShowReplies] = useState(false);
     const INITIAL_REPLIES = 2;
@@ -106,39 +130,42 @@ export default function ArtistDetail() {
     };
 
     return (
-      <div className="pl-0 md:pl-4">
-        <div className="p-4 rounded-xl bg-white/10 border border-white/20 mb-2">
-          <div className="flex items-center gap-2 mb-2">
+      <div>
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl bg-white/[0.04] border border-white/10 p-3.5"
+        >
+          <div className="flex items-center gap-2.5 mb-2">
             {shout.profileImage ? (
               <img
                 src={shout.profileImage}
-                className="w-8 h-8 rounded-full object-cover border-2 border-purple-500/50"
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-violet-500/40"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                <User className="w-4 h-4 text-purple-400" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+                <User className="w-4 h-4 text-white/90" />
               </div>
             )}
-
-            <span className="text-white font-medium">{shout.username}</span>
-
-            <span className="text-white/50 text-sm ml-auto">
+            <span className="font-medium text-sm">{shout.username}</span>
+            <span className="text-white/30 text-[11px] ml-auto">
               {new Date(shout.created_at).toLocaleString("en-US", {
                 month: "short",
                 day: "numeric",
-                year: "numeric",
                 hour: "numeric",
                 minute: "2-digit",
               })}
             </span>
           </div>
 
-          <p className="text-white mb-3">{shout.message}</p>
+          <p className="text-white/90 text-sm leading-relaxed mb-2.5">
+            {shout.message}
+          </p>
 
-          <div className="flex items-center gap-5 text-white/60 text-sm">
+          <div className="flex items-center gap-4 text-white/50 text-xs">
             <button
               onClick={() => handleLike(shout.id)}
-              className="flex items-center gap-1 hover:text-red-400 transition"
+              className="flex items-center gap-1.5 hover:text-fuchsia-400 transition-colors"
             >
               <Heart className="w-4 h-4" />
               {shout.likes || 0}
@@ -149,73 +176,77 @@ export default function ArtistDetail() {
                 onClick={() =>
                   setReplyToId(replyToId === shout.id ? null : shout.id)
                 }
-                className="hover:text-purple-400 transition"
+                className="flex items-center gap-1.5 hover:text-violet-400 transition-colors"
               >
                 <MessageCircle className="w-4 h-4" />
+                Reply
               </button>
             )}
 
             {String(shout.user_id) === String(userId) && !shout.is_deleted && (
               <button
                 onClick={() => handleDeleteShout(shout.id)}
-                className="hover:text-red-500 transition"
+                className="flex items-center gap-1.5 hover:text-red-400 transition-colors ml-auto"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          {replyToId === shout.id && (
-            <div className="mt-3">
-              <textarea
-                value={replyMessage}
-                onChange={(e) => setReplyMessage(e.target.value)}
-                rows={2}
-                placeholder="Write a reply…"
-                className="w-full p-2 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
-              />
-              <div className="flex justify-end gap-2 mt-2">
-                <button
-                  onClick={() => setReplyToId(null)}
-                  className="text-white/50 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReplySend}
-                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded-lg text-white"
-                >
-                  Reply
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          <AnimatePresence>
+            {replyToId === shout.id && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 flex items-end gap-2">
+                  <textarea
+                    value={replyMessage}
+                    onChange={(e) => setReplyMessage(e.target.value)}
+                    rows={1}
+                    placeholder="Write a reply…"
+                    className="flex-1 resize-none p-2.5 rounded-xl bg-white/5 text-sm text-white border border-white/10 focus:border-violet-400 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleReplySend}
+                    className="p-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:shadow-lg hover:shadow-violet-500/25 transition-all shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
         {replies?.length > 0 && (
-          <div className="mt-2 pl-4 border-l border-white/10">
+          <div className="mt-2 ml-4 pl-3 border-l border-white/10 space-y-2">
             {!showReplies ? (
               <button
                 onClick={() => setShowReplies(true)}
-                className="flex items-center gap-1 text-purple-400 text-sm hover:underline"
+                className="flex items-center gap-1 text-violet-400 text-xs hover:text-violet-300"
               >
                 <ChevronDown className="w-4 h-4" />
-                View {replies.length} replies
+                View {replies.length}{" "}
+                {replies.length === 1 ? "reply" : "replies"}
               </button>
             ) : (
               <>
                 {replies.slice(0, visibleReplies).map((r) => (
-                  <div key={r.id} className="animate-fade-in">
-                    <Shout shout={r} replies={r.replies} />
-                  </div>
+                  <Shout
+                    key={r.id}
+                    shout={r}
+                    replies={r.replies}
+                    depth={depth + 1}
+                  />
                 ))}
 
                 {visibleReplies < replies.length && (
                   <button
-                    onClick={() =>
-                      setVisibleReplies((v) => v + INITIAL_REPLIES)
-                    }
-                    className="text-purple-400 text-sm hover:underline mt-1"
+                    onClick={() => setVisibleReplies((v) => v + INITIAL_REPLIES)}
+                    className="text-violet-400 text-xs hover:text-violet-300"
                   >
                     Load more replies
                   </button>
@@ -226,7 +257,7 @@ export default function ArtistDetail() {
                     setShowReplies(false);
                     setVisibleReplies(INITIAL_REPLIES);
                   }}
-                  className="flex items-center gap-1 text-white/40 text-sm mt-1"
+                  className="flex items-center gap-1 text-white/40 text-xs"
                 >
                   <ChevronUp className="w-4 h-4" />
                   Hide replies
@@ -248,161 +279,328 @@ export default function ArtistDetail() {
       })
       .then((res) => {
         setArtist(res.data.artist);
-        setSongs(res.data.topSongs);
+        // Hide songs nobody has actually listened to (0 seconds played).
+        setSongs(
+          (res.data.topSongs || []).filter((s) => (s.total_seconds || 0) > 0),
+        );
         setUsers(res.data.topUsers || []);
-        setLoggedUserData(res.data.loggedUser || null);
-      });
+      })
+      .catch((err) => console.error("Artist load failed", err));
 
     fetchShouts();
   }, [artistId, token]);
 
-  if (!artist) return null;
+  if (!artist) {
+    return (
+      <div className="min-h-screen bg-[#070312] flex items-center justify-center text-white/50">
+        Loading artist…
+      </div>
+    );
+  }
+
+  const maxSong = Math.max(...songs.map((s) => s.total_seconds || 0), 1);
 
   /* ---------------- RENDER ---------------- */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-pink-900 pt-20 px-6">
-      <div className="max-w-4xl mx-auto">
-        <Link
-          to="/profile"
-          className="inline-flex items-center gap-2 text-white/70 hover:text-white mb-6"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          Back
-        </Link>
-
-        {/* Artist Header */}
-        <div className="flex items-center gap-6 mb-10">
-          <img
-            src={artist.image_url}
-            className="w-32 h-32 rounded-full object-cover border-4 border-purple-500/50"
-          />
-          <div>
-            <h1 className="text-4xl font-bold text-white">{artist.name}</h1>
-            <p className="text-white/60">
-              {Math.floor(artist.total_seconds / 60)} minutes listened
-            </p>
-          </div>
+    <div className="min-h-screen bg-[#070312] text-white">
+      {/* ===== HERO ===== */}
+      <div className="relative overflow-hidden">
+        {/* Blurred artist backdrop */}
+        <div className="absolute inset-0 -z-10">
+          {artist.image_url && (
+            <img
+              src={artist.image_url}
+              className="w-full h-full object-cover opacity-25 blur-3xl scale-125"
+              alt=""
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-violet-900/30 via-[#070312]/85 to-[#070312]" />
         </div>
 
-        {/* Top Songs */}
-        <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-          <Music className="w-6 h-6 text-purple-400" /> Top Songs
-        </h2>
-        <div className="space-y-3 mb-10">
-          {songs.map((song) => (
-            <div
-              key={song.id}
-              className="p-4 rounded-xl bg-white/10 border border-white/20"
-            >
-              <p className="text-white font-medium">{song.title}</p>
-              <p className="text-white/60 text-sm flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                {Math.floor(song.total_seconds / 60)} minutes
-              </p>
-            </div>
-          ))}
-        </div>
+        <div className="max-w-6xl mx-auto px-5 pt-6 pb-8">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors mb-8"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
 
-        {/* Top Users */}
-        <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-          <User className="w-6 h-6 text-purple-400" /> Top Listeners
-        </h2>
-        <div className="space-y-3 mb-10">
-          {users.map((user) => (
-            <div
-              key={user.id}
-              className="p-4 rounded-xl bg-white/10 border border-white/20 flex items-center gap-4 cursor-pointer hover:bg-white/20"
-              onClick={() => setSelectedUser(user)}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col sm:flex-row sm:items-end gap-5"
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.05, type: "spring", stiffness: 200, damping: 20 }}
+              className="shrink-0"
             >
-              {user.profileImage ? (
+              {artist.image_url ? (
                 <img
-                  src={user.profileImage}
-                  className="w-10 h-10 rounded-full object-cover border-2 border-purple-500/50"
+                  src={artist.image_url}
+                  className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl object-cover ring-1 ring-white/15 shadow-2xl shadow-violet-900/50"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <User className="w-5 h-5 text-purple-400" />
+                <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl">
+                  <User className="w-14 h-14 text-white/80" />
                 </div>
               )}
-              <div>
-                <p className="text-white font-medium">{user.username}</p>
-                <p className="text-white/60 text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  {Math.floor(user.total_seconds / 60)} minutes
-                </p>
+            </motion.div>
+
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.25em] text-violet-300/70 mb-1.5">
+                Artist
+              </p>
+              <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-none mb-4 break-words">
+                {artist.name}
+              </h1>
+              <div className="flex flex-wrap gap-2">
+                <HeroStat
+                  icon={Headphones}
+                  label="listened"
+                  value={formatDuration(artist.total_seconds)}
+                />
+                <HeroStat icon={Music} label="songs" value={songs.length} />
+                <HeroStat
+                  icon={Users}
+                  label="listeners"
+                  value={users.length}
+                />
               </div>
             </div>
-          ))}
+          </motion.div>
+        </div>
+      </div>
+
+      {/* ===== BODY: bento grid ===== */}
+      <div className="max-w-6xl mx-auto px-5 pb-16 grid grid-cols-1 lg:grid-cols-5 gap-5">
+        {/* LEFT: songs + listeners */}
+        <div className="lg:col-span-3 space-y-5">
+          {/* Top Songs */}
+          <Panel title="Top songs" icon={Music}>
+            {songs.length === 0 ? (
+              <Empty>No songs have been played yet.</Empty>
+            ) : (
+              <div className="space-y-1.5">
+                {songs.map((song, i) => (
+                  <motion.div
+                    key={song.id ?? i}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="group flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] transition-colors"
+                  >
+                    <span className="w-6 text-center text-sm font-bold text-white/30 group-hover:text-violet-300 transition-colors">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {song.title}
+                      </p>
+                      <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+                          style={{
+                            width: `${Math.max(
+                              6,
+                              ((song.total_seconds || 0) / maxSong) * 100,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-xs text-white/50 shrink-0 tabular-nums">
+                      {formatDuration(song.total_seconds)}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          {/* Top Listeners */}
+          <Panel title="Top listeners" icon={Users}>
+            {users.length === 0 ? (
+              <Empty>No listeners yet.</Empty>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {users.map((u, i) => (
+                  <motion.button
+                    key={u.id}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.04 }}
+                    whileHover={{ y: -3 }}
+                    onClick={() => setSelectedUser(u)}
+                    className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-violet-400/40 transition-colors text-left"
+                  >
+                    {u.profileImage ? (
+                      <img
+                        src={u.profileImage}
+                        className="w-9 h-9 rounded-full object-cover ring-2 ring-violet-500/30 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-white/80" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {u.username}
+                      </p>
+                      <p className="text-[11px] text-white/40 truncate">
+                        {formatDuration(u.total_seconds)}
+                      </p>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
 
-        {/* User Modal */}
-        {selectedUser && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-gradient-to-br from-purple-900 via-black to-pink-900 p-6 rounded-2xl w-full max-w-lg relative">
-              <button
-                className="absolute top-4 right-4 text-white"
-                onClick={() => setSelectedUser(null)}
+        {/* RIGHT: the wall */}
+        <div className="lg:col-span-2">
+          <Panel
+            title="The wall"
+            icon={MessageCircle}
+            badge={totalShouts || null}
+            className="lg:sticky lg:top-5"
+          >
+            {/* Composer: textarea + Post on the right */}
+            <div className="flex items-end gap-2 mb-4">
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                rows={2}
+                placeholder={`Say something about ${artist.name}…`}
+                className="flex-1 resize-none p-3 rounded-xl bg-white/5 text-sm text-white border border-white/10 focus:border-violet-400 focus:outline-none placeholder-white/30"
+              />
+              <motion.button
+                whileTap={{ scale: 0.94 }}
+                onClick={handleSend}
+                disabled={!newMessage.trim() || posting}
+                className="h-[46px] px-4 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 font-medium text-sm flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-violet-500/25 transition-all shrink-0"
               >
-                <X className="w-6 h-6" />
-              </button>
+                <Send className="w-4 h-4" />
+                Post
+              </motion.button>
+            </div>
 
-              <div className="flex items-center gap-4 mb-4">
-                {selectedUser.profileImage ? (
-                  <img
-                    src={selectedUser.profileImage}
-                    className="w-16 h-16 rounded-full object-cover border-2 border-purple-500/50"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
-                    <User className="w-8 h-8 text-purple-400" />
+            <div className="space-y-2.5 lg:max-h-[60vh] lg:overflow-y-auto lg:pr-1">
+              {threadedShouts.length === 0 ? (
+                <Empty>Be the first to leave a shout.</Empty>
+              ) : (
+                threadedShouts.map((s) => (
+                  <Shout key={s.id} shout={s} replies={s.replies} />
+                ))
+              )}
+            </div>
+          </Panel>
+        </div>
+      </div>
+
+      {/* ===== USER MODAL ===== */}
+      <AnimatePresence>
+        {selectedUser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+            onClick={() => setSelectedUser(null)}
+          >
+            <motion.div
+              initial={{ y: "100%", opacity: 0.6 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0.6 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-slate-900 rounded-t-3xl sm:rounded-3xl border border-white/10 shadow-2xl p-6"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  {selectedUser.profileImage ? (
+                    <img
+                      src={selectedUser.profileImage}
+                      className="w-16 h-16 rounded-2xl object-cover ring-1 ring-white/15"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+                      <User className="w-8 h-8 text-white/80" />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-xl font-bold">{selectedUser.username}</h3>
+                    <p className="text-white/50 text-sm flex items-center gap-1.5 mt-0.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      {formatDuration(selectedUser.total_seconds)} on {artist.name}
+                    </p>
                   </div>
-                )}
-                <h3 className="text-2xl font-bold text-white">
-                  {selectedUser.username}
-                </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedUser(null)}
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-
-              <p className="text-white/60">
-                {Math.floor(selectedUser.total_seconds / 60)} minutes listened
-                to {artist.name}
-              </p>
 
               <Link
                 to={`/user/${selectedUser.id}`}
-                className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-purple-500/70 text-white rounded-xl hover:bg-purple-600/80"
                 onClick={() => setSelectedUser(null)}
+                className="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 font-medium text-sm text-center block hover:shadow-lg hover:shadow-violet-500/25 transition-all"
               >
-                View profile
+                View full profile →
               </Link>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
-
-        {/* Shoutbox */}
-        <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-          <Music className="w-6 h-6 text-purple-400" /> Shoutbox
-        </h2>
-
-        <textarea
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="Write a shout…"
-          className="w-full p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
-        />
-        <button
-          onClick={handleSend}
-          className="mt-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white"
-        >
-          Post
-        </button>
-
-        <div className="mt-6 space-y-2">
-          {threadedShouts.map((s) => (
-            <Shout key={s.id} shout={s} replies={s.replies} />
-          ))}
-        </div>
-      </div>
+      </AnimatePresence>
     </div>
   );
+}
+
+/* ---------------- small building blocks ---------------- */
+
+function HeroStat({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10">
+      <Icon className="w-3.5 h-3.5 text-violet-300" />
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+      <span className="text-[11px] text-white/40">{label}</span>
+    </div>
+  );
+}
+
+function Panel({ title, icon: Icon, badge, className = "", children }) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className={`rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-xl p-4 ${className}`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="w-4 h-4 text-violet-400" />
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-white/80">
+          {title}
+        </h2>
+        {badge != null && (
+          <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">
+            {badge}
+          </span>
+        )}
+      </div>
+      {children}
+    </motion.section>
+  );
+}
+
+function Empty({ children }) {
+  return <p className="text-sm text-white/40 py-4 text-center">{children}</p>;
 }

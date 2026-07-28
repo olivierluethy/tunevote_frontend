@@ -4,6 +4,8 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, Music, Sparkles, AlertCircle, CheckCircle, X, User } from "lucide-react";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +24,7 @@ export default function Register() {
     setSuccess(false);
 
     try {
-      const res = await axios.post("https://api.tunevote.com/register", {
+      const res = await axios.post(`${API_BASE}/register`, {
         email,
         password,
       });
@@ -44,11 +46,11 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "https://api.tunevote.com/auth/google";
+    window.location.href = `${API_BASE}/auth/google`;
   };
 
   const handleFacebookLogin = () => {
-    window.location.href = "https://api.tunevote.com/auth/facebook";
+    window.location.href = `${API_BASE}/auth/facebook`;
   };
 
   return (
