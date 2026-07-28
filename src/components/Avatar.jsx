@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 // ---------------------------------------------------------------------------
 // Avatar — a user's profile picture with a clean initials fallback.
 //
@@ -12,7 +14,7 @@ import { useEffect, useState } from "react";
 // picture fall back to their initial on a brand gradient.
 // ---------------------------------------------------------------------------
 
-const API = "https://api.tunevote.com";
+const API = API_BASE;
 
 // userId -> image_url string | null (null = resolved, no picture)
 const avatarCache = new Map();

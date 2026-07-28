@@ -1,12 +1,12 @@
 // src/pages/UserDetail.jsx
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import {
   ArrowLeft,
   User,
   Music,
   Headphones,
-  Clock,
   Users,
   Trophy,
   ThumbsUp,
@@ -16,35 +16,24 @@ import {
   Zap,
   Eye,
   Vote,
-  Heart,
-  MessageSquare,
+  Radio,
 } from "lucide-react";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-const StatCard = ({ icon: Icon, value, label, color = "purple", gradient = false }) => {
-  const base = `backdrop-blur-xl bg-gradient-to-br from-${color}-900/40 to-black/40 border border-${color}-500/30 rounded-2xl p-5 text-center hover:scale-[1.03] transition-all duration-300 shadow-lg shadow-${color}-900/20`;
-
-  return (
-    <div className={base}>
-      <Icon className={`w-8 h-8 mx-auto mb-3 text-${color}-400`} />
-      <p className="text-3xl font-bold text-white tracking-tight">{value}</p>
-      <p className="text-white/60 text-sm mt-1 font-medium">{label}</p>
-    </div>
-  );
+// Format a duration in seconds as "1h 23m 45s" (omitting empty leading units).
+const formatDuration = (totalSeconds) => {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const parts = [];
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (sec || parts.length === 0) parts.push(`${sec}s`);
+  return parts.join(" ");
 };
-
-const SectionHeader = ({ icon: Icon, title }) => (
-  <div className="flex items-center gap-3 mb-6">
-    <div className="p-2 rounded-lg bg-purple-500/20">
-      <Icon className="w-6 h-6 text-purple-400" />
-    </div>
-    <h2 className="text-2xl font-bold text-white bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
-      {title}
-    </h2>
-  </div>
-);
 
 export default function UserDetail() {
   const { userId } = useParams();
@@ -69,177 +58,336 @@ export default function UserDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-950 via-black to-pink-950 flex items-center justify-center">
-        <div className="text-white text-xl animate-pulse">Lade Profil...</div>
+      <div className="min-h-screen bg-[#070312] flex items-center justify-center text-white/50">
+        Loading profile…
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-950 via-black to-pink-950 flex flex-col items-center justify-center text-white">
-        <h1 className="text-4xl font-bold mb-4">User nicht gefunden</h1>
-        <Link to="/dashboard" className="text-purple-400 hover:underline">
-          Zurück zum Dashboard
+      <div className="min-h-screen bg-[#070312] flex flex-col items-center justify-center text-white gap-3">
+        <h1 className="text-2xl font-black tracking-tight">User not found</h1>
+        <Link to="/dashboard" className="text-violet-300 hover:text-violet-200">
+          Back to dashboard
         </Link>
       </div>
     );
   }
 
-  const { user, top_songs, top_co_listeners, session_count, stats, active_session } = data;
-
-  const totalMinutes = Math.floor(user.total_listen_seconds / 60);
-  const songsHeard = stats.totalSongsHeard || 0;
+  const { user, top_songs, top_co_listeners, session_count, stats } = data;
+  const activeSession = user.active_session;
+  const maxSong = Math.max(...top_songs.map((s) => s.total_seconds || 0), 1);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-black to-pink-950 text-white pt-16 pb-20 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
-        {/* Back Button */}
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center gap-2 text-purple-300 hover:text-purple-200 mb-8 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Zurück</span>
-        </Link>
-
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-8 mb-12">
-          <div className="relative group">
-            {user.image_url ? (
-              <img
-                src={user.image_url}
-                alt={user.username}
-                className="w-40 h-40 sm:w-48 sm:h-48 rounded-full object-cover border-4 border-purple-500/60 shadow-2xl shadow-purple-900/50"
-              />
-            ) : (
-              <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full bg-gradient-to-br from-purple-700 to-pink-700 flex items-center justify-center border-4 border-purple-500/60 shadow-2xl shadow-purple-900/50">
-                <User className="w-20 h-20 text-white/80" />
-              </div>
-            )}
-            {/* Live Indicator */}
-            {user.is_live_host && (
-              <div className="absolute -bottom-2 -right-2 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg border-2 border-white/50 animate-pulse">
-                LIVE
-              </div>
-            )}
-          </div>
-
-          <div className="text-center sm:text-left">
-            <h1 className="text-4xl sm:text-5xl font-extrabold bg-gradient-to-r from-purple-300 via-pink-300 to-purple-300 bg-clip-text text-transparent mb-2">
-              {user.username}
-            </h1>
-            <p className="text-xl text-white/70 mb-4">
-              {totalMinutes.toLocaleString()} Minuten gehört
-            </p>
-
-            {/* Active Session Badge */}
-            {active_session && (
-              <Link
-                to={active_session.join_url || "#"}
-                className={`inline-flex items-center gap-3 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
-                  active_session.is_private
-                    ? "bg-red-600/30 text-red-300 border border-red-500/40"
-                    : "bg-green-600/30 text-green-300 border border-green-500/40 hover:bg-green-600/50"
-                }`}
-              >
-                <div className="w-3 h-3 rounded-full bg-current animate-pulse" />
-                {active_session.is_private ? "Privater Live-Room" : "Live-Room beitreten"}
-              </Link>
-            )}
-          </div>
+    <div className="min-h-screen bg-[#070312] text-white">
+      {/* ===== HERO ===== */}
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-0 -z-10">
+          {user.image_url && (
+            <img
+              src={user.image_url}
+              className="w-full h-full object-cover opacity-20 blur-3xl scale-125"
+              alt=""
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-violet-900/30 via-[#070312]/85 to-[#070312]" />
         </div>
 
-        {/* Quick Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-12">
-          <StatCard icon={Headphones} value={totalMinutes.toLocaleString()} label="Minuten gehört" />
-          <StatCard icon={Music} value={songsHeard} label="Songs gehört" />
-          <StatCard icon={Users} value={session_count} label="Sessions" />
-          <StatCard icon={Trophy} value={stats.winsOfOwnSuggestions} label="Song-Gewinne" color="yellow" />
-          <StatCard icon={Flame} value={stats.maxWinStreakOwn} label="Bester Streak" color="orange" />
-        </div>
+        <div className="max-w-6xl mx-auto px-5 pt-6 pb-8">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors mb-8"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
 
-        {/* Listening & Voting Highlights */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-          {/* Top Songs */}
-          <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
-            <SectionHeader icon={Music} title="Top Songs" />
-            <div className="space-y-4">
-              {top_songs.length === 0 ? (
-                <p className="text-white/50 text-center py-6">Noch keine Songs gehört</p>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col sm:flex-row sm:items-end gap-5"
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.05, type: "spring", stiffness: 200, damping: 20 }}
+              className="relative shrink-0"
+            >
+              {user.image_url ? (
+                <img
+                  src={user.image_url}
+                  className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl object-cover ring-1 ring-white/15 shadow-2xl shadow-violet-900/50"
+                />
               ) : (
-                top_songs.map((song, i) => (
-                  <div key={song.video_id} className="flex items-center gap-4">
+                <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl">
+                  <User className="w-14 h-14 text-white/80" />
+                </div>
+              )}
+              {user.is_live_host && (
+                <span className="absolute -bottom-2 -right-2 flex items-center gap-1 bg-rose-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg ring-2 ring-[#070312]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  LIVE
+                </span>
+              )}
+            </motion.div>
+
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.25em] text-violet-300/70 mb-1.5">
+                Listener
+              </p>
+              <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-none mb-4 break-words">
+                {user.username}
+              </h1>
+              <div className="flex flex-wrap gap-2">
+                <HeroStat
+                  icon={Headphones}
+                  label="listened"
+                  value={formatDuration(user.total_listen_seconds)}
+                />
+                <HeroStat
+                  icon={Music}
+                  label="songs"
+                  value={stats.totalSongsHeard || 0}
+                />
+                <HeroStat icon={Users} label="sessions" value={session_count} />
+              </div>
+
+              {activeSession && (
+                <Link
+                  to={activeSession.join_url || "#"}
+                  className={`mt-4 inline-flex items-center gap-2.5 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    activeSession.is_private
+                      ? "bg-white/5 text-white/50 border border-white/10 cursor-default"
+                      : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25"
+                  }`}
+                >
+                  <Radio className="w-4 h-4" />
+                  {activeSession.is_private
+                    ? "In a private room"
+                    : `Live now — join ${activeSession.name || "the room"}`}
+                </Link>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* ===== BODY ===== */}
+      <div className="max-w-6xl mx-auto px-5 pb-16 space-y-5">
+        {/* Highlight tiles */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatTile
+            icon={Trophy}
+            value={stats.winsOfOwnSuggestions || 0}
+            label="Song wins"
+            accent="amber"
+          />
+          <StatTile
+            icon={Flame}
+            value={stats.maxWinStreakOwn || 0}
+            label="Best streak"
+            accent="fuchsia"
+          />
+          <StatTile
+            icon={ThumbsUp}
+            value={stats.votesOnOwnSuggestions || 0}
+            label="Votes on own"
+            accent="violet"
+          />
+          <StatTile
+            icon={Vote}
+            value={
+              (stats.votesOnOthersAndWon || 0) +
+              (stats.votesOnOthersAndLost || 0)
+            }
+            label="Total votes"
+            accent="sky"
+          />
+        </div>
+
+        {/* Top songs + co-listeners */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Panel title="Top songs" icon={Music}>
+            {top_songs.length === 0 ? (
+              <Empty>No songs listened yet.</Empty>
+            ) : (
+              <div className="space-y-1.5">
+                {top_songs.map((song, i) => (
+                  <motion.div
+                    key={song.video_id}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="group flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] transition-colors"
+                  >
+                    <span className="w-6 text-center text-sm font-bold text-white/30 group-hover:text-violet-300 transition-colors">
+                      {i + 1}
+                    </span>
                     <img
                       src={song.thumbnail}
-                      alt={song.title}
-                      className="w-14 h-14 rounded-lg object-cover shadow-md"
+                      alt=""
+                      className="w-11 h-11 rounded-lg object-cover shrink-0"
                     />
-                    <div className="flex-1">
-                      <p className="font-medium text-white truncate">{song.title}</p>
-                      <p className="text-sm text-white/60">
-                        {Math.floor(song.total_seconds / 60)} min
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {song.title}
                       </p>
-                    </div>
-                    <span className="text-xs text-white/50">#{i + 1}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Top Co-Listeners */}
-          <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
-            <SectionHeader icon={Users} title="Top Mit-Hörer" />
-            <div className="space-y-4">
-              {top_co_listeners.length === 0 ? (
-                <p className="text-white/50 text-center py-6">Noch keine gemeinsamen Sessions</p>
-              ) : (
-                top_co_listeners.map((u) => (
-                  <Link
-                    key={u.id}
-                    to={`/user/${u.id}`}
-                    className="flex items-center gap-4 hover:bg-white/5 p-2 rounded-xl transition-colors group"
-                  >
-                    {u.image_url ? (
-  <img
-    src={u.image_url}
-    alt={u.username}
-    className="w-12 h-12 rounded-full object-cover border-2 border-purple-500/30"
-  />
-) : (
-
-                      <div className="w-12 h-12 rounded-full bg-purple-700/50 flex items-center justify-center">
-                        <User className="w-6 h-6 text-white/70" />
+                      <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+                          style={{
+                            width: `${Math.max(
+                              6,
+                              ((song.total_seconds || 0) / maxSong) * 100,
+                            )}%`,
+                          }}
+                        />
                       </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="font-medium text-white group-hover:text-purple-300 transition-colors">
-                        {u.username}
-                      </p>
-                      <p className="text-sm text-white/60">
-                        {Math.floor(u.total_seconds / 60)} min zusammen
-                      </p>
                     </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
+                    <span className="text-xs text-white/50 shrink-0 tabular-nums">
+                      {formatDuration(song.total_seconds)}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Listens with" icon={Users}>
+            {top_co_listeners.length === 0 ? (
+              <Empty>No shared sessions yet.</Empty>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {top_co_listeners.map((u, i) => (
+                  <motion.div
+                    key={u.id}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.04 }}
+                    whileHover={{ y: -3 }}
+                  >
+                    <Link
+                      to={`/user/${u.id}`}
+                      className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-violet-400/40 transition-colors"
+                    >
+                      {u.image_url ? (
+                        <img
+                          src={u.image_url}
+                          className="w-9 h-9 rounded-full object-cover ring-2 ring-violet-500/30 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 text-white/80" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {u.username}
+                        </p>
+                        <p className="text-[11px] text-white/40 truncate">
+                          {formatDuration(u.total_seconds)} together
+                        </p>
+                      </div>
+                    </Link>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
 
-        {/* Voting Stats */}
-        <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-3xl p-8 mb-12">
-          <SectionHeader icon={Vote} title="Voting Highlights" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
-            <StatCard icon={ThumbsUp} value={stats.votesOnOwnSuggestions} label="Votes auf eigene" />
-            <StatCard icon={TrendingUp} value={stats.votesOnOthersAndWon} label="Erfolgreiche Fremdvotes" color="green" />
-            <StatCard icon={TrendingDown} value={stats.votesOnOthersAndLost} label="Verlorene Fremdvotes" color="red" />
-            <StatCard icon={Eye} value={stats.sessionsWithoutAnyVote} label="Sessions ohne Vote" color="blue" />
-            <StatCard icon={Zap} value={stats.ownSuggestionsLost} label="Eigene Songs verloren" color="amber" />
+        {/* Voting highlights */}
+        <Panel title="Voting highlights" icon={Vote}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <StatTile
+              icon={TrendingUp}
+              value={stats.votesOnOthersAndWon || 0}
+              label="Backed a winner"
+              accent="emerald"
+            />
+            <StatTile
+              icon={TrendingDown}
+              value={stats.votesOnOthersAndLost || 0}
+              label="Backed a loser"
+              accent="rose"
+            />
+            <StatTile
+              icon={ThumbsUp}
+              value={stats.votesOnOwnSuggestions || 0}
+              label="Votes on own"
+              accent="violet"
+            />
+            <StatTile
+              icon={Eye}
+              value={stats.sessionsWithoutAnyVote || 0}
+              label="Sessions, no vote"
+              accent="sky"
+            />
+            <StatTile
+              icon={Zap}
+              value={stats.ownSuggestionsLost || 0}
+              label="Own songs lost"
+              accent="amber"
+            />
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );
+}
+
+/* ---------------- small building blocks ---------------- */
+
+function HeroStat({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10">
+      <Icon className="w-3.5 h-3.5 text-violet-300" />
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+      <span className="text-[11px] text-white/40">{label}</span>
+    </div>
+  );
+}
+
+function Panel({ title, icon: Icon, children }) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-xl p-4"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="w-4 h-4 text-violet-400" />
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-white/80">
+          {title}
+        </h2>
+      </div>
+      {children}
+    </motion.section>
+  );
+}
+
+const ACCENTS = {
+  violet: "text-violet-300",
+  fuchsia: "text-fuchsia-300",
+  emerald: "text-emerald-300",
+  amber: "text-amber-300",
+  rose: "text-rose-300",
+  sky: "text-sky-300",
+};
+
+function StatTile({ icon: Icon, value, label, accent = "violet" }) {
+  return (
+    <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4 text-center">
+      <Icon className={`w-5 h-5 mx-auto mb-2 ${ACCENTS[accent] || ACCENTS.violet}`} />
+      <p className="text-2xl font-black tracking-tight tabular-nums">{value}</p>
+      <p className="text-[11px] text-white/50 mt-0.5 leading-tight">{label}</p>
+    </div>
+  );
+}
+
+function Empty({ children }) {
+  return <p className="text-sm text-white/40 py-4 text-center">{children}</p>;
 }

@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom"; // <-- useParams hinzufügen!
 import axios from "axios";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
 export default function ResetPassword() {
   const { token } = useParams();           // RICHTIG: Token aus URL lesen!
   const navigate = useNavigate();          // Optional: für Weiterleitung nach Erfolg
@@ -35,7 +37,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const res = await axios.post("https://api.tunevote.com/reset-password", {
+      const res = await axios.post(`${API_BASE}/reset-password`, {
         token,
         newPassword: password,
       });

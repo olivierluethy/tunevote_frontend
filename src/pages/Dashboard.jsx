@@ -6,6 +6,8 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Transition } from "@headlessui/react";
 import { io } from "socket.io-client";
+
+const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
   trackEvent,
   trackPageView,
@@ -138,7 +140,7 @@ export default function Dashboard() {
 
   // Socket — participant counts update live across the dashboard.
   useEffect(() => {
-    socketRef.current = io("https://api.tunevote.com/");
+    socketRef.current = io(`${API_BASE}/`);
 
     socketRef.current.on("participant_count_update", (data) => {
       setSessions((prev) =>
@@ -176,7 +178,7 @@ export default function Dashboard() {
   // === Sessions loading ===
   const fetchSessions = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/sessions", {
+      const res = await axios.get(`${API_BASE}/sessions`, {
         headers: getAuthHeaders(),
       });
       setSessions(res.data);
@@ -195,7 +197,7 @@ export default function Dashboard() {
 
   const fetchSentInvites = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/invites/sent", {
+      const res = await axios.get(`${API_BASE}/invites/sent`, {
         headers: getAuthHeaders(),
       });
       setSentInvites(res.data);
@@ -206,7 +208,7 @@ export default function Dashboard() {
 
   const fetchReceivedInvites = async () => {
     try {
-      const res = await axios.get("https://api.tunevote.com/invites/received", {
+      const res = await axios.get(`${API_BASE}/invites/received`, {
         headers: getAuthHeaders(),
       });
       setReceivedInvites(res.data);
@@ -219,7 +221,7 @@ export default function Dashboard() {
     if (!isLoggedIn) return;
 
     try {
-      const res = await axios.get("https://api.tunevote.com/profile", {
+      const res = await axios.get(`${API_BASE}/profile`, {
         headers: getAuthHeaders(),
       });
 
@@ -246,7 +248,7 @@ export default function Dashboard() {
 
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/revoke`,
+        `${API_BASE}/invites/${inviteId}/revoke`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -268,7 +270,7 @@ export default function Dashboard() {
   const acceptInvite = async (inviteId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/accept`,
+        `${API_BASE}/invites/${inviteId}/accept`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -286,7 +288,7 @@ export default function Dashboard() {
   const rejectInvite = async (inviteId) => {
     try {
       await axios.post(
-        `https://api.tunevote.com/invites/${inviteId}/reject`,
+        `${API_BASE}/invites/${inviteId}/reject`,
         {},
         { headers: getAuthHeaders() }
       );
@@ -345,7 +347,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const res = await axios.post(
-        "https://api.tunevote.com/sessions",
+        `${API_BASE}/sessions`,
         {
           title: newSessionTitle,
           is_private: isPrivate ? 1 : 0,
@@ -371,7 +373,7 @@ export default function Dashboard() {
 
   const deleteSession = async (sessionId) => {
     try {
-      await axios.delete(`https://api.tunevote.com/sessions/${sessionId}`, {
+      await axios.delete(`${API_BASE}/sessions/${sessionId}`, {
         headers: getAuthHeaders(),
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
@@ -517,7 +519,7 @@ export default function Dashboard() {
                   active ? "bg-white/5" : ""
                 } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
               >
-                <QrCode className="w-4 h-4 text-purple-400" />
+                <QrCode className="w-4 h-4 text-violet-400" />
                 Show QR code
               </button>
             )}
@@ -533,7 +535,7 @@ export default function Dashboard() {
                   active ? "bg-white/5" : ""
                 } flex w-full items-center gap-2 px-3 py-2.5 text-sm`}
               >
-                <Copy className="w-4 h-4 text-purple-400" />
+                <Copy className="w-4 h-4 text-violet-400" />
                 Copy share link
               </button>
             )}
@@ -579,7 +581,7 @@ export default function Dashboard() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        whileHover={{ y: -2 }}
+        whileHover={{ y: -3 }}
         onClick={() => openSession(s)}
         className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-4 transition-colors ${
           isCurrent
@@ -644,16 +646,16 @@ export default function Dashboard() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        whileHover={{ y: -2 }}
+        whileHover={{ y: -3 }}
         onClick={() => openSession(s)}
-        className="group flex cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+        className="group flex cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 backdrop-blur-xl transition-colors hover:border-violet-400/30 hover:bg-white/[0.07]"
       >
         <div className="flex items-start justify-between gap-2">
           <span
             className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
               priv
-                ? "bg-pink-500/15 text-pink-300"
-                : "bg-purple-500/15 text-purple-300"
+                ? "bg-fuchsia-500/15 text-fuchsia-300"
+                : "bg-violet-500/15 text-violet-300"
             }`}
           >
             {priv ? (
@@ -666,7 +668,7 @@ export default function Dashboard() {
           {renderCardMenu(s)}
         </div>
 
-        <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-white group-hover:text-purple-100">
+        <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-white group-hover:text-violet-100">
           {s.title}
         </h3>
 
@@ -702,7 +704,7 @@ export default function Dashboard() {
               </>
             )}
           </button>
-          <span className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white/60 transition-colors group-hover:bg-purple-500/20 group-hover:text-purple-200">
+          <span className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white/60 transition-colors group-hover:bg-violet-500/20 group-hover:text-violet-200">
             Open
             <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
           </span>
@@ -731,7 +733,7 @@ export default function Dashboard() {
               ? "Name your room — e.g. Friday night party, Road trip 2026…"
               : "Name your session…"
           }
-          className={`w-full rounded-xl border border-white/10 bg-white/5 placeholder-white/30 transition-colors focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 ${
+          className={`w-full rounded-xl border border-white/10 bg-white/5 placeholder-white/30 transition-colors focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 ${
             hero ? "px-4 py-3.5 text-base" : "px-4 py-3 text-sm"
           }`}
           value={newSessionTitle}
@@ -746,7 +748,7 @@ export default function Dashboard() {
               onClick={() => setIsPrivate(false)}
               className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all ${
                 !isPrivate
-                  ? "bg-purple-500 text-white shadow-sm"
+                  ? "bg-violet-500 text-white shadow-sm"
                   : "text-white/60 hover:bg-white/5"
               }`}
             >
@@ -758,7 +760,7 @@ export default function Dashboard() {
               onClick={() => setIsPrivate(true)}
               className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all ${
                 isPrivate
-                  ? "bg-pink-500 text-white shadow-sm"
+                  ? "bg-fuchsia-500 text-white shadow-sm"
                   : "text-white/60 hover:bg-white/5"
               }`}
             >
@@ -770,7 +772,7 @@ export default function Dashboard() {
           <button
             type="submit"
             disabled={loading || !newSessionTitle.trim()}
-            className={`flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 font-semibold text-white transition-all hover:shadow-lg hover:shadow-purple-500/30 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 font-semibold text-white transition-all hover:shadow-lg hover:shadow-violet-500/30 disabled:cursor-not-allowed disabled:opacity-40 ${
               hero ? "px-6 py-3.5 text-base" : "px-5 py-2.5 text-sm"
             }`}
           >
@@ -783,12 +785,12 @@ export default function Dashboard() {
       <p className="mt-3 flex items-center gap-1.5 text-xs text-white/45">
         {isPrivate ? (
           <>
-            <Lock className="h-3 w-3 text-pink-300" />
+            <Lock className="h-3 w-3 text-fuchsia-300" />
             Private — only people you invite can join.
           </>
         ) : (
           <>
-            <Globe className="h-3 w-3 text-purple-300" />
+            <Globe className="h-3 w-3 text-violet-300" />
             Public — anyone with the link can join.
           </>
         )}
@@ -797,11 +799,12 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
+    <div className="min-h-screen bg-[#070312] text-white">
       {/* Background atmosphere */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-20 left-1/4 h-[500px] w-[500px] rounded-full bg-purple-600/20 blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full bg-pink-600/15 blur-[100px]" />
+        <div className="absolute -top-24 left-1/4 h-[520px] w-[520px] rounded-full bg-violet-600/20 blur-[130px]" />
+        <div className="absolute bottom-0 right-1/4 h-[420px] w-[420px] rounded-full bg-fuchsia-600/15 blur-[110px]" />
+        <div className="absolute left-1/2 top-1/3 h-[300px] w-[300px] -translate-x-1/2 rounded-full bg-indigo-600/10 blur-[120px]" />
       </div>
 
       {/* ── HEADER — slim, full-width identity bar ─────────────────────────── */}
@@ -809,14 +812,16 @@ export default function Dashboard() {
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.4 }}
-        className="sticky top-0 z-40 border-b border-white/5 bg-slate-950/80 backdrop-blur-xl"
+        className="sticky top-0 z-40 border-b border-white/5 bg-[#070312]/80 backdrop-blur-xl"
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 p-1.5">
-              <Music className="h-5 w-5" />
-            </div>
-            <span className="text-lg font-bold">TuneVote</span>
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/icons/icon.png"
+              alt="TuneVote"
+              className="h-9 w-9 drop-shadow-[0_0_12px_rgba(139,92,246,0.45)]"
+            />
+            <span className="text-lg font-black tracking-tight">TuneVote</span>
           </div>
 
           <Menu as="div" className="relative">
@@ -829,7 +834,7 @@ export default function Dashboard() {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 text-sm font-bold">
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
                     {displayName.charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -838,7 +843,7 @@ export default function Dashboard() {
                 {displayName}
               </span>
               {isGuest && (
-                <span className="hidden rounded bg-yellow-500/20 px-1.5 py-0.5 text-[10px] text-yellow-400 sm:block">
+                <span className="hidden rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300 sm:block">
                   Guest
                 </span>
               )}
@@ -864,7 +869,7 @@ export default function Dashboard() {
                           active ? "bg-white/5" : ""
                         } flex w-full items-center gap-2 px-4 py-2.5 text-sm`}
                       >
-                        <User className="h-4 w-4 text-purple-400" />
+                        <User className="h-4 w-4 text-violet-400" />
                         My profile
                       </button>
                     )}
@@ -880,10 +885,10 @@ export default function Dashboard() {
                         } flex w-full items-center justify-between gap-2 px-4 py-2.5 text-sm`}
                       >
                         <span className="flex items-center gap-2">
-                          <Send className="h-4 w-4 text-purple-400" />
+                          <Send className="h-4 w-4 text-violet-400" />
                           Sent invites
                         </span>
-                        <span className="text-xs text-white/40">
+                        <span className="text-xs text-white/40 tabular-nums">
                           {pendingSentInvitesCount}
                         </span>
                       </button>
@@ -909,17 +914,17 @@ export default function Dashboard() {
         </div>
       </motion.header>
 
-      <main className="relative z-10 mx-auto max-w-7xl px-4 pb-40 pt-5 sm:px-6">
+      <main className="relative z-10 mx-auto max-w-7xl px-4 pb-40 pt-6 sm:px-6">
         {/* Guest banner */}
         {isGuest && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-yellow-500/20 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 p-3"
+            className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-3 backdrop-blur-xl"
           >
             <div className="flex min-w-0 items-center gap-2">
-              <AlertCircle className="h-5 w-5 shrink-0 text-yellow-400" />
-              <p className="truncate text-sm text-yellow-200">
+              <AlertCircle className="h-5 w-5 shrink-0 text-amber-400" />
+              <p className="truncate text-sm text-amber-200">
                 <span className="font-medium">Guest mode</span>
                 <span className="hidden sm:inline">
                   {" "}
@@ -929,11 +934,41 @@ export default function Dashboard() {
             </div>
             <button
               onClick={handleRegister}
-              className="flex shrink-0 items-center gap-1 rounded-lg bg-yellow-500 px-3 py-1.5 text-sm font-semibold text-slate-900 transition-colors hover:bg-yellow-400"
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-slate-900 transition-colors hover:bg-amber-400"
             >
               <UserPlus className="h-4 w-4" />
               <span className="hidden sm:inline">Sign up</span>
             </button>
+          </motion.div>
+        )}
+
+        {/* ── Greeting — orients returning users and surfaces live activity ─── */}
+        {!isFirstRun && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="mb-6 flex flex-wrap items-end justify-between gap-3"
+          >
+            <div>
+              <p className="mb-1.5 text-[11px] uppercase tracking-[0.25em] text-violet-300/70">
+                Dashboard
+              </p>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                Hey {displayName}
+              </h1>
+            </div>
+            {liveSessions.length > 0 && (
+              <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75 motion-reduce:animate-none" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-emerald-200">
+                  {liveSessions.length} live now
+                </span>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -946,20 +981,23 @@ export default function Dashboard() {
           <motion.section
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative overflow-hidden rounded-3xl border border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-fuchsia-500/10 to-pink-500/10 p-6 shadow-glass-lg sm:p-10"
+            className="relative overflow-hidden rounded-3xl border border-violet-400/30 bg-gradient-to-br from-violet-500/20 via-fuchsia-500/10 to-transparent p-6 shadow-2xl shadow-violet-900/40 sm:p-10"
           >
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-pink-500/20 blur-3xl"
+              className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-fuchsia-500/20 blur-3xl"
             />
             <div className="relative mx-auto max-w-2xl text-center">
-              <motion.div
-                animate={{ rotate: [0, 8, -8, 0] }}
+              <motion.img
+                src="/icons/icon.png"
+                alt="TuneVote"
+                animate={{ y: [0, -6, 0] }}
                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="mb-4 inline-flex rounded-2xl border border-purple-400/40 bg-gradient-to-br from-purple-500/30 to-pink-500/30 p-3.5"
-              >
-                <Sparkles className="h-7 w-7 text-purple-100" />
-              </motion.div>
+                className="mx-auto mb-4 h-16 w-16 drop-shadow-[0_0_20px_rgba(139,92,246,0.5)]"
+              />
+              <p className="mb-2 text-[11px] uppercase tracking-[0.25em] text-violet-300/70">
+                Welcome to TuneVote
+              </p>
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
                 Create your first session
               </h1>
@@ -981,28 +1019,38 @@ export default function Dashboard() {
            ══════════════════════════════════════════════════════════════════ */}
         {isLoggedIn && !isFirstRun && (
           <section className="grid gap-4 lg:grid-cols-5">
-            {/* CREATE (dominant, purple) */}
-            <div className="rounded-3xl border border-purple-400/25 bg-gradient-to-br from-purple-500/15 via-fuchsia-500/8 to-transparent p-5 shadow-glass lg:col-span-3">
+            {/* CREATE (dominant, violet) */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="rounded-3xl border border-violet-400/25 bg-gradient-to-br from-violet-500/15 via-fuchsia-500/[0.08] to-transparent p-5 backdrop-blur-xl lg:col-span-3"
+            >
               <div className="mb-3 flex items-center gap-2">
-                <div className="rounded-lg bg-purple-500/20 p-1.5">
-                  <Plus className="h-4 w-4 text-purple-300" />
+                <div className="rounded-lg bg-violet-500/20 p-1.5">
+                  <Plus className="h-4 w-4 text-violet-300" />
                 </div>
                 <h2 className="text-lg font-bold tracking-tight">
                   Start a session
                 </h2>
               </div>
               {renderCreateForm()}
-            </div>
+            </motion.div>
 
             {/* JOIN / ON AIR (emerald) */}
-            <div className="flex flex-col rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/8 to-transparent p-5 lg:col-span-2">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="flex flex-col rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.08] to-transparent p-5 backdrop-blur-xl lg:col-span-2"
+            >
               <div className="mb-3 flex items-center gap-2">
                 <Radio className="h-4 w-4 text-emerald-400" />
-                <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.25em] text-emerald-300">
                   On air
                 </h2>
                 {liveSessions.length > 0 && (
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
                     {liveSessions.length}
                   </span>
                 )}
@@ -1025,7 +1073,7 @@ export default function Dashboard() {
                   </p>
                 </div>
               )}
-            </div>
+            </motion.div>
           </section>
         )}
 
@@ -1034,10 +1082,10 @@ export default function Dashboard() {
           <section className="mt-6">
             <div className="mb-3 flex items-center gap-2 px-1">
               <Radio className="h-4 w-4 text-emerald-400" />
-              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.25em] text-emerald-300">
                 Or drop into a live room
               </h2>
-              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
                 {liveSessions.length}
               </span>
             </div>
@@ -1054,10 +1102,10 @@ export default function Dashboard() {
           <section className="mt-1">
             <div className="mb-3 flex items-center gap-2 px-1">
               <Radio className="h-4 w-4 text-emerald-400" />
-              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-300">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.25em] text-emerald-300">
                 Live now
               </h2>
-              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
                 {liveSessions.length}
               </span>
             </div>
@@ -1073,11 +1121,11 @@ export default function Dashboard() {
         {!isGuest && pendingInvites.length > 0 && (
           <section className="mt-6">
             <div className="mb-3 flex items-center gap-2 px-1">
-              <Mail className="h-4 w-4 text-pink-400" />
-              <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-pink-300">
+              <Mail className="h-4 w-4 text-fuchsia-400" />
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.25em] text-fuchsia-300">
                 Waiting for you
               </h2>
-              <span className="rounded-full bg-pink-500/20 px-2 py-0.5 text-xs font-semibold text-pink-300">
+              <span className="rounded-full bg-fuchsia-500/20 px-2 py-0.5 text-xs font-semibold tabular-nums text-fuchsia-300">
                 {pendingInvites.length}
               </span>
             </div>
@@ -1089,11 +1137,11 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -10 }}
-                  className="rounded-2xl border border-pink-500/25 bg-gradient-to-br from-pink-500/10 to-transparent p-4"
+                  className="rounded-2xl border border-fuchsia-500/25 bg-gradient-to-br from-fuchsia-500/10 to-transparent p-4 backdrop-blur-xl"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pink-500/20">
-                      <Mail className="h-5 w-5 text-pink-300" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fuchsia-500/20">
+                      <Mail className="h-5 w-5 text-fuchsia-300" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">
@@ -1131,10 +1179,10 @@ export default function Dashboard() {
           <section className="mt-8">
             <div className="mb-4 flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-white/80">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/80">
                   {liveSessions.length > 0 ? "Other sessions" : "Your sessions"}
                 </h2>
-                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/50">
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs font-semibold tabular-nums text-white/50">
                   {filteredOtherSessions.length}
                 </span>
               </div>
@@ -1211,13 +1259,13 @@ export default function Dashboard() {
                                   active ? "bg-white/5" : ""
                                 } ${
                                   sortBy === opt.key
-                                    ? "text-purple-200"
+                                    ? "text-violet-200"
                                     : "text-white/80"
                                 }`}
                               >
                                 {opt.label}
                                 {sortBy === opt.key && (
-                                  <Check className="h-4 w-4 text-purple-400" />
+                                  <Check className="h-4 w-4 text-violet-400" />
                                 )}
                               </button>
                             )}
@@ -1237,7 +1285,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <AnimatePresence>
-                  {filteredOtherSessions.map((s) => renderSessionCard(s))}
+                  {sortedOtherSessions.map((s) => renderSessionCard(s))}
                 </AnimatePresence>
               </div>
             )}
@@ -1261,7 +1309,7 @@ export default function Dashboard() {
             </p>
             <button
               onClick={handleRegister}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-medium"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-medium"
             >
               <UserPlus className="h-4 w-4" />
               Create an account
@@ -1284,6 +1332,7 @@ export default function Dashboard() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
               className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 text-center shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1314,7 +1363,7 @@ export default function Dashboard() {
                   copyJoinLink(qrModalSession.id);
                   setQrModalSession(null);
                 }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 py-2.5 text-sm font-medium transition-all hover:shadow-lg hover:shadow-purple-500/25"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 text-sm font-medium transition-all hover:shadow-lg hover:shadow-violet-500/25"
               >
                 <Copy className="h-4 w-4" />
                 Copy link
@@ -1338,12 +1387,13 @@ export default function Dashboard() {
               initial={{ scale: 0.95, y: 16 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 16 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
               className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Send className="h-5 w-5 text-purple-400" />
+                  <Send className="h-5 w-5 text-violet-400" />
                   <h3 className="font-semibold">Sent invitations</h3>
                 </div>
                 <button
@@ -1441,6 +1491,7 @@ export default function Dashboard() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
               className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
