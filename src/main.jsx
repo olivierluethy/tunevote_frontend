@@ -13,6 +13,7 @@ import InviteRedirect from "./pages/InviteRedirect";
 import Profile from "./pages/Profile";
 import ArtistDetail from "./pages/ArtistDetail";
 import UserDetail from "./pages/UserDetail";
+import SongDetail from "./pages/SongDetail";
 import GoogleCallback from "./components/GoogleCallback";   // oder wo du sie abgelegt hast
 import FacebookCallback from "./components/FacebookCallback";
 import { PlaybackProvider } from "./context/PlaybackContext";
@@ -134,6 +135,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="/artist/:artistId" element={<ArtistDetail />} />
 
         <Route path="/user/:userId" element={<UserDetail />} />
+
+        <Route path="/song/:videoId" element={<SongDetail />} />
 
         {/* 🟢 Öffentlich zugängliche Session-Seite */}
         <Route

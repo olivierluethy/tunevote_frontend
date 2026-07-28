@@ -37,6 +37,7 @@ import {
   Mail,
   Send,
   MoreVertical,
+  Crown,
   Play,
   ArrowRight,
   Headphones,
@@ -70,6 +71,7 @@ const SORT_OPTIONS = [
   { key: "recent", label: "Recently created" },
   { key: "opened", label: "Recently opened" },
   { key: "active", label: "Most active" },
+  { key: "hosting", label: "Hosted by me first" },
   { key: "alpha", label: "A–Z" },
 ];
 
@@ -363,7 +365,7 @@ export default function Dashboard() {
       // for it in the list — the session page focuses the add-song input on
       // arrival so they can start building the queue immediately.
       markSessionOpened(res.data.id);
-      navigate(`/session/${res.data.id}`);
+      navigate(`/session/${res.data.public_id || res.data.id}`);
     } catch (err) {
       alert("Could not create session");
       trackEvent("session_create_failed");
@@ -384,8 +386,10 @@ export default function Dashboard() {
     }
   };
 
-  const copyJoinLink = (sessionId) => {
-    const link = `${window.location.origin}/session/${sessionId}`;
+  // `publicId` (the long share id) goes in the URL; `sessionId` (numeric) still
+  // drives the "Copied" UI state so it matches the card's copiedId === s.id.
+  const copyJoinLink = (sessionId, publicId) => {
+    const link = `${window.location.origin}/session/${publicId || sessionId}`;
     navigator.clipboard.writeText(link);
     setCopiedId(sessionId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -398,7 +402,7 @@ export default function Dashboard() {
       session_title: session.title,
     });
     markSessionOpened(session.id);
-    navigate(`/session/${session.id}`);
+    navigate(`/session/${session.public_id || session.id}`);
   };
 
   // ---------------------------------------------------------------------------
@@ -447,6 +451,13 @@ export default function Dashboard() {
       return (b.participant_count || 0) - (a.participant_count || 0);
     if (sortBy === "opened")
       return (lastOpenedMap[b.id] || 0) - (lastOpenedMap[a.id] || 0);
+    if (sortBy === "hosting") {
+      // Sessions you host first, then newest.
+      const ah = isHostOf(a) ? 1 : 0;
+      const bh = isHostOf(b) ? 1 : 0;
+      if (ah !== bh) return bh - ah;
+      return new Date(b.created_at) - new Date(a.created_at);
+    }
     // "recent" (default): newest first.
     return new Date(b.created_at) - new Date(a.created_at);
   });
@@ -476,7 +487,11 @@ export default function Dashboard() {
     if (diffDays === 0) return "today";
     if (diffDays === 1) return "yesterday";
     if (diffDays < 7) return `${diffDays} days ago`;
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -498,16 +513,11 @@ export default function Dashboard() {
       >
         <MoreVertical className="w-4 h-4" />
       </Menu.Button>
-      <Transition
-        as={Fragment}
-        enter="transition ease-out duration-100"
-        enterFrom="opacity-0 scale-95"
-        enterTo="opacity-100 scale-100"
-        leave="transition ease-in duration-75"
-        leaveFrom="opacity-100 scale-100"
-        leaveTo="opacity-0 scale-95"
+      <Menu.Items
+        anchor="bottom end"
+        transition
+        className="w-44 origin-top-right rounded-xl bg-slate-900 border border-white/10 shadow-xl overflow-hidden z-50 [--anchor-gap:0.5rem] transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0"
       >
-        <Menu.Items className="absolute right-0 mt-2 w-44 rounded-xl bg-slate-900 border border-white/10 shadow-xl overflow-hidden z-30">
           <Menu.Item>
             {({ active }) => (
               <button
@@ -529,7 +539,7 @@ export default function Dashboard() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  copyJoinLink(s.id);
+                  copyJoinLink(s.id, s.public_id);
                 }}
                 className={`${
                   active ? "bg-white/5" : ""
@@ -561,8 +571,7 @@ export default function Dashboard() {
               </Menu.Item>
             </>
           )}
-        </Menu.Items>
-      </Transition>
+      </Menu.Items>
     </Menu>
   );
 
@@ -651,20 +660,31 @@ export default function Dashboard() {
         className="group flex cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 backdrop-blur-xl transition-colors hover:border-violet-400/30 hover:bg-white/[0.07]"
       >
         <div className="flex items-start justify-between gap-2">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
-              priv
-                ? "bg-fuchsia-500/15 text-fuchsia-300"
-                : "bg-violet-500/15 text-violet-300"
-            }`}
-          >
-            {priv ? (
-              <Lock className="h-3 w-3" />
-            ) : (
-              <Globe className="h-3 w-3" />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                priv
+                  ? "bg-fuchsia-500/15 text-fuchsia-300"
+                  : "bg-violet-500/15 text-violet-300"
+              }`}
+            >
+              {priv ? (
+                <Lock className="h-3 w-3" />
+              ) : (
+                <Globe className="h-3 w-3" />
+              )}
+              {priv ? "Private" : "Public"}
+            </span>
+            {isHostOf(s) && (
+              <span
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-300"
+                title="You host this session"
+              >
+                <Crown className="h-3 w-3" />
+                Hosting
+              </span>
             )}
-            {priv ? "Private" : "Public"}
-          </span>
+          </div>
           {renderCardMenu(s)}
         </div>
 
@@ -684,7 +704,7 @@ export default function Dashboard() {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              copyJoinLink(s.id);
+              copyJoinLink(s.id, s.public_id);
             }}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
               copiedId === s.id
@@ -1352,7 +1372,7 @@ export default function Dashboard() {
 
               <div className="mb-4 inline-block rounded-2xl bg-white p-4">
                 <QRCodeCanvas
-                  value={`${window.location.origin}/session/${qrModalSession.id}`}
+                  value={`${window.location.origin}/session/${qrModalSession.public_id || qrModalSession.id}`}
                   size={200}
                   level="H"
                 />
@@ -1360,7 +1380,7 @@ export default function Dashboard() {
 
               <button
                 onClick={() => {
-                  copyJoinLink(qrModalSession.id);
+                  copyJoinLink(qrModalSession.id, qrModalSession.public_id);
                   setQrModalSession(null);
                 }}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 text-sm font-medium transition-all hover:shadow-lg hover:shadow-violet-500/25"
