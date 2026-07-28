@@ -1,0 +1,11 @@
+# SPA fallback for Apache/cPanel: serve index.html for client-side routes.
+# Copied verbatim into dist/ by `vite build` (files in public/ are emitted at the
+# web root). Required so deep links like /session/:id don't 404.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
