@@ -265,6 +265,8 @@ export default function Profile() {
   const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [emailPwSending, setEmailPwSending] = useState(false);
+  // Inline banner shown after "email me the new password" (replaces alert()).
+  const [emailPwNotice, setEmailPwNotice] = useState("");
 
   // Navigation: active tab + the single "edit picture" modal
   const [tab, setTab] = useState("overview");
@@ -1064,12 +1066,11 @@ export default function Profile() {
         { headers: getAuthHeaders() }
       );
       setError("");
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-      alert(
+      setEmailPwNotice(
         res.data?.message ||
           "A new password has been sent to your email address."
       );
+      setTimeout(() => setEmailPwNotice(""), 6000);
     } catch (err) {
       console.error("Error emailing new password:", err);
       setError(
@@ -1190,6 +1191,20 @@ export default function Profile() {
             <AlertCircle className="w-4 h-4" />
             {error}
             <button onClick={() => setError("")} className="ml-2">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+        {emailPwNotice && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className="fixed top-4 left-4 right-4 z-[70] max-w-md mx-auto p-3 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-200 text-sm text-center flex items-center justify-center gap-2 backdrop-blur-xl"
+          >
+            <Send className="w-4 h-4" />
+            {emailPwNotice}
+            <button onClick={() => setEmailPwNotice("")} className="ml-2">
               <X className="w-4 h-4" />
             </button>
           </motion.div>
