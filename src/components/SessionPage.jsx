@@ -19,6 +19,12 @@ import unidecode from "unidecode";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
+
+// A real song search or a YouTube URL is short. Anything longer (e.g. a pasted
+// paragraph) is never a valid query and would drive the O(n·m) fuzzy-match into
+// tens of millions of ops that freeze the main thread. Cap it. YouTube URLs with
+// params stay well under this.
+const MAX_SEARCH_LEN = 200;
 import {
   trackEvent,
   trackPageView,
@@ -712,6 +718,22 @@ const SessionPage = () => {
       const youtubeId = extractYouTubeId(query);
       const isUrl = !!youtubeId;
 
+      // Layer 1: a non-URL query longer than the cap is never a real song
+      // search. Bail before the fuzzy-match so the main thread stays free and
+      // the input stays responsive (you can still clear it and paste a link).
+      // This also covers the "Paste link" button, which sets the query from the
+      // clipboard and so bypasses the input's maxLength.
+      if (!isUrl && query.length > MAX_SEARCH_LEN) {
+        setSearchResults([]);
+        trackEvent("search_no_results", {
+          session_id: sessionId,
+          query_length: query.length,
+          is_url: false,
+          source: "too_long",
+        });
+        return;
+      }
+
       markTime(`search_${sessionId}`);
 
       trackEvent("search_performed", {
@@ -780,8 +802,20 @@ const SessionPage = () => {
         const matches = videoCache
           .map((item) => {
             const normalizedCacheTitle = normalize(item.title_norm);
-            const ratio = levenshteinRatio(normalizedCacheTitle, normQuery);
             const includes = normalizedCacheTitle.includes(normQuery);
+            // Layer 2 (defense in depth): edit distance is always ≥ the length
+            // difference, so the ratio can never exceed (shorter / longer). When
+            // that ceiling is already below the 85 threshold the match is
+            // impossible — skip the expensive O(n·m) compute entirely. Also
+            // speeds up every normal search.
+            const maxLen = Math.max(normalizedCacheTitle.length, normQuery.length);
+            const minLen = Math.min(normalizedCacheTitle.length, normQuery.length);
+            const ratio =
+              maxLen === 0
+                ? 100
+                : (minLen / maxLen) * 100 < 85
+                ? 0
+                : levenshteinRatio(normalizedCacheTitle, normQuery);
             return { ...item, ratio, includes };
           })
           .filter((item) => item.ratio > 85 || item.includes)
