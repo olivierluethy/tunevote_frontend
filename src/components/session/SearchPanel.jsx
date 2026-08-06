@@ -30,6 +30,11 @@ const SearchPanel = ({
       <input
         ref={inputRef}
         type="text"
+        // A song title / YouTube URL is short; cap typed & pasted input so an
+        // over-long paste can never reach the fuzzy-match. Keep in sync with
+        // MAX_SEARCH_LEN in SessionPage.jsx (the JS guard that also covers the
+        // clipboard "Paste link" button, which bypasses this attribute).
+        maxLength={200}
         placeholder={
           isLargeSearch
             ? "Type a song or paste a YouTube link…"
