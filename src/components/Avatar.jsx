@@ -39,7 +39,10 @@ async function resolveAvatar(userId) {
   const req = fetch(`${API}/user/${userId}`, { headers: authHeaders() })
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
-      const url = data?.image_url || null;
+      // GET /user/:id nests the picture under `user` ({ user: { image_url } }).
+      // Reading it top-level always yielded undefined → every avatar fell back
+      // to initials. Keep a flat fallback in case another caller returns it flat.
+      const url = data?.user?.image_url ?? data?.image_url ?? null;
       avatarCache.set(userId, url);
       return url;
     })
