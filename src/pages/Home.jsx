@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { ensureGuestToken } from "../utils/auth";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
@@ -68,6 +69,16 @@ export default function Home() {
     setIsPlaying(!isPlaying);
   };
 
+  const navigate = useNavigate();
+
+  // Start a Session: make the anonymous visitor a recognised guest BEFORE
+  // entering the dashboard, otherwise RequireAuth bounces them to /login and
+  // public sessions never load (issue #45).
+  const handleStartSession = async () => {
+    await ensureGuestToken();
+    navigate("/dashboard");
+  };
+
   // ✅ handleJoinSession ruft die Backend-Route auf
   const handleJoinSession = async () => {
     try {
@@ -102,12 +113,12 @@ export default function Home() {
               </span>
             </Link>
             <div className="flex space-x-4">
-              <Link
-                to="/dashboard"
+              <button
+                onClick={handleStartSession}
                 className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 font-semibold hover:shadow-lg hover:shadow-purple-500/40 transition-all"
               >
                 Start Session
-              </Link>
+              </button>
               <button
                 onClick={handleJoinSession}
                 className="px-4 py-2 rounded-lg border border-purple-400 text-purple-300 hover:bg-purple-400/20 font-semibold transition-all"
@@ -136,13 +147,13 @@ export default function Home() {
               Collaborative Music Sessions – Vote, Play, Enjoy.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link
-                to="/dashboard"
+              <button
+                onClick={handleStartSession}
                 className="group px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold text-lg flex items-center justify-center space-x-2 hover:shadow-2xl hover:shadow-purple-500/50 transition-all"
               >
                 <Play className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 <span>Start a Session</span>
-              </Link>
+              </button>
 
               <button
                 onClick={handleJoinSession}

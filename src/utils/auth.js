@@ -25,3 +25,36 @@ export function clearUserAuth(storage = window.localStorage) {
   storage.removeItem("userId");
   storage.removeItem("username");
 }
+
+// Base URL of the API, resolved the same way as every other frontend module.
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "https://api.tunevote.com"
+).replace(/\/+$/, "");
+
+// Guarantee the current visitor has an identity before entering an auth-gated
+// area (dashboard/session). A logged-in user already has a `token`, so we do
+// nothing. An anonymous visitor with no `guestToken` gets one minted via
+// POST /guest/join and persisted, so the app (RequireAuth, GET /sessions)
+// recognises them as a guest instead of bouncing them to /login.
+//
+// Fixes issue #45: "Start a Session" from the landing page must make the
+// clicker a recognised guest. Never throws — on failure it returns whatever
+// token exists (possibly null) and lets the caller proceed/handle it.
+export async function ensureGuestToken(storage = window.localStorage) {
+  if (storage.getItem("token")) return storage.getItem("token");
+
+  let guestToken = storage.getItem("guestToken");
+  if (guestToken) return guestToken;
+
+  const nickname = storage.getItem("guestName") || "Gast";
+  try {
+    const { default: axios } = await import("axios");
+    const { data } = await axios.post(`${API_BASE}/guest/join`, { nickname });
+    guestToken = data.guestToken;
+    storage.setItem("guestToken", guestToken);
+    if (data.nickname) storage.setItem("guestName", data.nickname);
+  } catch (err) {
+    console.error("ensureGuestToken: guest creation failed:", err);
+  }
+  return guestToken;
+}
