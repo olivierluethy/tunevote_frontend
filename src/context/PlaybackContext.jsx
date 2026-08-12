@@ -936,6 +936,51 @@ export const PlaybackProvider = ({ children }) => {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
+  // === Screen Wake Lock — keep the device from sleeping while audio plays (#22).
+  // This is the legitimate way to keep a browser-tab stream alive: the Wake Lock
+  // API auto-releases when the tab is hidden, so we re-acquire on visibility.
+  // Best-effort — unsupported browsers (e.g. Firefox variants) simply skip it,
+  // and the existing MediaSession + visibility resync still cover them.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let sentinel = null;
+    const shouldHold = () => isPlaying && !isPaused && !!currentSong?.videoId;
+
+    const acquire = async () => {
+      if (!shouldHold() || document.visibilityState !== "visible" || sentinel) {
+        return;
+      }
+      try {
+        sentinel = await navigator.wakeLock.request("screen");
+        sentinel.addEventListener?.("release", () => {
+          sentinel = null;
+        });
+      } catch (err) {
+        console.warn("[wakeLock] request failed:", err.message);
+      }
+    };
+    const release = async () => {
+      try {
+        await sentinel?.release?.();
+      } catch {
+        /* already released */
+      }
+      sentinel = null;
+    };
+
+    if (shouldHold()) acquire();
+    else release();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      release();
+    };
+  }, [isPlaying, isPaused, currentSong?.videoId]);
+
   // Live song progress for the mini-player progress bar. Position is
   // server-authoritative (keeps advancing even if the local user paused their
   // own audio); duration comes from the loaded YouTube player. Read-only —
