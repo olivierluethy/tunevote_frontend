@@ -500,6 +500,43 @@ const SessionPage = () => {
     }
   };
 
+  // #27 — "not feeling these" regenerate vote. Tracks per-round whether the
+  // current user has voted and the live tally the server reports back.
+  const [regenVote, setRegenVote] = useState({ roundId: null, voted: false });
+  const [regenTally, setRegenTally] = useState({ rejections: 0, liveUsers: 0 });
+
+  const fetchRecommendations = useCallback(async () => {
+    try {
+      const res = await axios.get(
+        `${API_BASE}/sessions/${sessionId}/recommendations`,
+        { headers: getAuthHeaders() }
+      );
+      setRecommendations(res.data || []);
+    } catch (e) {
+      console.error("[AI] refresh error:", e.response?.status || e.message);
+    }
+  }, [sessionId]);
+
+  const handleNotFeelingThese = async () => {
+    const roundId = votingPhase?.roundId;
+    if (!roundId || regenVote.voted) return;
+    try {
+      const res = await axios.post(
+        `${API_BASE}/proposals/${roundId}/regenerate-vote`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      setRegenVote({ roundId, voted: true });
+      setRegenTally({
+        rejections: res.data.rejections,
+        liveUsers: res.data.liveUsers,
+      });
+      if (res.data.regenerated) fetchRecommendations();
+    } catch (err) {
+      console.error("regenerate-vote failed:", err);
+    }
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -575,6 +612,10 @@ const SessionPage = () => {
     socketRef.current.on("session_started", () => {
       setSessionLive(true);
       loadSessionData();
+    });
+
+    socketRef.current.on("regenerate_suggestions", () => {
+      fetchRecommendations();
     });
 
     socketRef.current.on("participant_role_changed", ({ participantId, role }) => {
@@ -1459,6 +1500,31 @@ const SessionPage = () => {
               votingPhase={votingPhase}
               timeRemaining={timeRemaining}
             />
+
+            {/* #27 — live-user majority "regenerate AI suggestions" */}
+            {stage === "live-suggesting" &&
+              suggestedSongs.some((s) => s.itemSource === "ai") && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-xs text-white/50">
+                    Not into the AI picks?
+                    {regenTally.liveUsers > 0 && (
+                      <span className="ml-1 tabular-nums text-white/70">
+                        {regenTally.rejections}/{regenTally.liveUsers} want new ones
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    onClick={handleNotFeelingThese}
+                    disabled={
+                      regenVote.voted &&
+                      regenVote.roundId === votingPhase?.roundId
+                    }
+                    className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+                  >
+                    👎 Not feeling these
+                  </button>
+                </div>
+              )}
 
             {/* Voting cards */}
             {suggestedSongs.length > 0 && (
