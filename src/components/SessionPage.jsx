@@ -7,6 +7,7 @@ import BreakModal from "./session/BreakModal";
 import ParticipantsModal from "./session/ParticipantsModal";
 import QrModal from "./session/QrModal";
 import EditNameModal from "./session/EditNameModal";
+import HostGenreSelect from "./session/HostGenreSelect";
 import SessionHeader from "./session/SessionHeader";
 import NowPlayingCard from "./session/NowPlayingCard";
 import VotingBanner from "./session/VotingBanner";
@@ -1534,6 +1535,17 @@ const SessionPage = () => {
             here. This guarantees that typing → adding a song → stage
             transition does not destroy the input or its focus state.
            ──────────────────────────────────────────────────────────────── */}
+        {isHost && (stage === "empty" || stage === "building") && (
+          <section className="px-4 pt-2 pb-1 flex justify-end">
+            <HostGenreSelect
+              apiBase={API_BASE}
+              sessionId={sessionId}
+              getAuthHeaders={getAuthHeaders}
+              initialGenre={session?.ai_genre}
+            />
+          </section>
+        )}
+
         {stage !== "paused" && stage !== "live-voting" && (
           <section className="px-4 pt-2 pb-3">
             {searchBlock}

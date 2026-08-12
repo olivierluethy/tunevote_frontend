@@ -6,6 +6,7 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Transition } from "@headlessui/react";
 import { io } from "socket.io-client";
+import GenreRanking from "../components/GenreRanking";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
@@ -1193,6 +1194,11 @@ export default function Dashboard() {
             </div>
           </section>
         )}
+
+        {/* ── TRENDING GENRES — genre ranking over a time window (#43) ──────── */}
+        <section className="mt-8">
+          <GenreRanking />
+        </section>
 
         {/* ── BROWSE GRID — every non-live session, dense multi-column ──────── */}
         {nonLiveSessions.length > 0 && (
