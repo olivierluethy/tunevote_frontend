@@ -43,6 +43,7 @@ const SearchPanel = ({
   inputRef,
   onPasteLink,
   searchResults,
+  searched,
   onProposeSong,
   sessionId,
 }) => {
@@ -120,6 +121,23 @@ const SearchPanel = ({
           Voting in progress — you can add new songs in the next round.
         </p>
       )}
+
+      {/* #51 — song not found: point the user at the paste-link option. */}
+      {canAddSongs &&
+        searched &&
+        searchQuery.trim().length > 0 &&
+        searchResults.length === 0 && (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/60">
+            No match for “{searchQuery.trim()}”. Got the video?{" "}
+            <button
+              onClick={onPasteLink}
+              className="font-medium text-purple-300 underline-offset-2 hover:underline"
+            >
+              Paste its YouTube link
+            </button>{" "}
+            to add it directly.
+          </div>
+        )}
 
       <AnimatePresence>
         {searchResults.length > 0 && (
