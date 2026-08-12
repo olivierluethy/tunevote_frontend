@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, X, Crown, Send, UserMinus } from "lucide-react";
+import { Users, X, Crown, Send, UserMinus, Shield, ShieldPlus } from "lucide-react";
 
 // Live participants list + (host-only) invite form and member management.
 const ParticipantsModal = ({
@@ -14,6 +14,7 @@ const ParticipantsModal = ({
   acceptedInvites,
   onRemoveInvite,
   removingUserId,
+  onSetRole,
 }) => (
   <AnimatePresence>
     {open && (
@@ -67,7 +68,35 @@ const ParticipantsModal = ({
                     )}
                   </div>
                   <span className="flex-1 text-sm font-medium">{p.name}</span>
+                  {p.isCoHost && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-300 bg-cyan-500/15 border border-cyan-400/30 rounded-full px-2 py-0.5">
+                      <Shield className="w-3 h-3" />
+                      Co-Host
+                    </span>
+                  )}
                   {p.isHost && <Crown className="w-4 h-4 text-yellow-400" />}
+                  {isHost && onSetRole && p.promotable && (
+                    <button
+                      onClick={() =>
+                        onSetRole(
+                          p.participantId,
+                          p.isCoHost ? "user" : "co-host"
+                        )
+                      }
+                      title={p.isCoHost ? "Remove co-host" : "Make co-host"}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        p.isCoHost
+                          ? "bg-white/5 text-white/60 hover:bg-white/10"
+                          : "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+                      }`}
+                    >
+                      {p.isCoHost ? (
+                        <ShieldPlus className="w-4 h-4 rotate-45" />
+                      ) : (
+                        <ShieldPlus className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

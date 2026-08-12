@@ -477,6 +477,29 @@ const SessionPage = () => {
     }
   }, [sessionId, session?.is_private]);
 
+  // The current user's co-host status, derived from the live participants (#24).
+  // Co-hosts share host powers (here: the AI genre control), while only the true
+  // host can promote/demote.
+  const isCoHost = liveParticipants.some(
+    (p) => String(p.userId) === String(userId) && p.role === "co-host"
+  );
+  const canHost = isHost || isCoHost;
+
+  // Host-only: promote a participant to co-host, or demote back to member.
+  const handleSetRole = async (participantId, role) => {
+    try {
+      await axios.patch(
+        `${API_BASE}/sessions/${sessionId}/participants/${participantId}/role`,
+        { role },
+        { headers: getAuthHeaders() }
+      );
+      loadLiveParticipants();
+    } catch (err) {
+      console.error("Failed to set participant role:", err);
+      alert("Could not update the role.");
+    }
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -552,6 +575,16 @@ const SessionPage = () => {
     socketRef.current.on("session_started", () => {
       setSessionLive(true);
       loadSessionData();
+    });
+
+    socketRef.current.on("participant_role_changed", ({ participantId, role }) => {
+      setLiveParticipants((prev) =>
+        prev.map((p) =>
+          p.participantId === participantId
+            ? { ...p, role, isCoHost: role === "co-host" }
+            : p
+        )
+      );
     });
 
     socketRef.current.on("live_participants_updated", (participants) => {
@@ -1535,7 +1568,7 @@ const SessionPage = () => {
             here. This guarantees that typing → adding a song → stage
             transition does not destroy the input or its focus state.
            ──────────────────────────────────────────────────────────────── */}
-        {isHost && (stage === "empty" || stage === "building") && (
+        {canHost && (stage === "empty" || stage === "building") && (
           <section className="px-4 pt-2 pb-1 flex justify-end">
             <HostGenreSelect
               apiBase={API_BASE}
@@ -1665,6 +1698,7 @@ const SessionPage = () => {
         acceptedInvites={acceptedInvites}
         onRemoveInvite={handleRemoveInvite}
         removingUserId={removingUserId}
+        onSetRole={handleSetRole}
       />
 
       <QrModal
