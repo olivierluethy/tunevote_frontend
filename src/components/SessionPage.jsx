@@ -8,6 +8,7 @@ import ParticipantsModal from "./session/ParticipantsModal";
 import QrModal from "./session/QrModal";
 import EditNameModal from "./session/EditNameModal";
 import HostGenreSelect from "./session/HostGenreSelect";
+import ReactionBar from "./session/ReactionBar";
 import SessionHeader from "./session/SessionHeader";
 import NowPlayingCard from "./session/NowPlayingCard";
 import VotingBanner from "./session/VotingBanner";
@@ -1495,6 +1496,12 @@ const SessionPage = () => {
               onToggleMute={togglePersonalMute}
               onVolumeChange={handleVolumeChange}
             />
+
+            {currentSong && (
+              <div className="px-4">
+                <ReactionBar socketRef={socketRef} />
+              </div>
+            )}
 
             <VotingBanner
               votingPhase={votingPhase}
