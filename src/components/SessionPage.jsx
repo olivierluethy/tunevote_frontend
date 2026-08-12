@@ -113,6 +113,9 @@ const SessionPage = () => {
   const [queue, setQueue] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  // #51 — true once a search has actually run, so we can show a "not found →
+  // paste a link" hint only after a real empty result (never while typing).
+  const [searched, setSearched] = useState(false);
   const [pauseDuration, setPauseDuration] = useState(30);
   const [pauseDescription, setPauseDescription] = useState("Short break");
 
@@ -785,12 +788,16 @@ const SessionPage = () => {
     const query = searchQuery.trim();
     if (!query) {
       setSearchResults([]);
+      setSearched(false);
       return;
     }
+
+    setSearched(false); // typing → hide the hint until this search resolves
 
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 
     searchDebounceRef.current = setTimeout(async () => {
+      setSearched(true);
       const youtubeId = extractYouTubeId(query);
       const isUrl = !!youtubeId;
 
@@ -1299,6 +1306,7 @@ const SessionPage = () => {
       inputRef={searchInputRef}
       onPasteLink={handlePasteLink}
       searchResults={searchResults}
+      searched={searched}
       onProposeSong={proposeSong}
       sessionId={sessionId}
     />
