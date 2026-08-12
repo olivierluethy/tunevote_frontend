@@ -6,7 +6,8 @@ const ParticipantsModal = ({
   open,
   onClose,
   liveParticipants,
-  isHost,
+  canInvite,
+  canManageRoles,
   inviteEmail,
   setInviteEmail,
   onSendInvite,
@@ -75,7 +76,7 @@ const ParticipantsModal = ({
                     </span>
                   )}
                   {p.isHost && <Crown className="w-4 h-4 text-yellow-400" />}
-                  {isHost && onSetRole && p.promotable && (
+                  {canManageRoles && onSetRole && p.promotable && (
                     <button
                       onClick={() =>
                         onSetRole(
@@ -102,7 +103,7 @@ const ParticipantsModal = ({
             </div>
           )}
 
-          {isHost && (
+          {canInvite && (
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 mb-3">
               <p className="text-xs text-white/60 mb-2 font-medium">
                 Invite someone
@@ -135,7 +136,7 @@ const ParticipantsModal = ({
             </div>
           )}
 
-          {isHost && acceptedInvites.length > 0 && (
+          {canManageRoles && acceptedInvites.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-xs text-white/50 px-1">Members</p>
               {acceptedInvites.map((invite) => (
