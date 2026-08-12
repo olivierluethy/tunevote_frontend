@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
@@ -45,9 +46,10 @@ const HomeRedirect = () => {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Wenn nicht eingeloggt -> schicke sie zum Login
-  // (Oder falls du eine echte Landingpage hast, hier <Home /> zurückgeben)
-  return <Navigate to="/login" replace />;
+  // Anonyme Besucher sehen die echte Landingpage. Dort macht "Start a Session"
+  // sie via ensureGuestToken() zu einem erkannten Gast, bevor es ins Dashboard
+  // geht (Issue #45) — statt sie direkt auf /login zu werfen.
+  return <Home />;
 };
 
 
