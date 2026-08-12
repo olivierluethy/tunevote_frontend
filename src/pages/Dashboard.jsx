@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Transition } from "@headlessui/react";
 import { io } from "socket.io-client";
 import GenreRanking from "../components/GenreRanking";
+import VotesLeaderboard from "../components/VotesLeaderboard";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
@@ -1195,9 +1196,10 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* ── TRENDING GENRES — genre ranking over a time window (#43) ──────── */}
-        <section className="mt-8">
+        {/* ── STATS — trending genres (#43) + top voters (#42) ──────────────── */}
+        <section className="mt-8 grid gap-4 lg:grid-cols-2">
           <GenreRanking />
+          <VotesLeaderboard />
         </section>
 
         {/* ── BROWSE GRID — every non-live session, dense multi-column ──────── */}

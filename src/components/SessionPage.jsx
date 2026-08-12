@@ -196,6 +196,14 @@ const SessionPage = () => {
   //
   // 'paused' is overlaid on top of any live stage when a break is active.
   // ---------------------------------------------------------------------------
+  // The current user's co-host status, derived from the live participants (#24).
+  // Co-hosts share host powers (rename, invite, start, AI genre); only the true
+  // host can promote/demote.
+  const isCoHost = liveParticipants.some(
+    (p) => String(p.userId) === String(userId) && p.role === "co-host"
+  );
+  const canHost = isHost || isCoHost;
+
   const stage = (() => {
     if (isPaused) return "paused";
     if (sessionLive && isLiveJoined) {
@@ -207,7 +215,7 @@ const SessionPage = () => {
     }
     if (sessionLive && !isLiveJoined) return "live-not-joined";
     if (queuedSongs.length === 0 && proposals.length === 0) return "empty";
-    if (isHost && queuedSongs.length > 0) return "ready";
+    if (canHost && queuedSongs.length > 0) return "ready";
     return "building";
   })();
 
@@ -477,14 +485,6 @@ const SessionPage = () => {
       console.error("Failed to load live participants:", err);
     }
   }, [sessionId, session?.is_private]);
-
-  // The current user's co-host status, derived from the live participants (#24).
-  // Co-hosts share host powers (here: the AI genre control), while only the true
-  // host can promote/demote.
-  const isCoHost = liveParticipants.some(
-    (p) => String(p.userId) === String(userId) && p.role === "co-host"
-  );
-  const canHost = isHost || isCoHost;
 
   // Host-only: promote a participant to co-host, or demote back to member.
   const handleSetRole = async (participantId, role) => {
@@ -1318,7 +1318,7 @@ const SessionPage = () => {
          ──────────────────────────────────────────────────────────────────── */}
       <SessionHeader
         session={session}
-        isHost={isHost}
+        isHost={canHost}
         sessionLive={sessionLive}
         queuedCount={queuedSongs.length}
         participantCount={liveParticipants.length}
@@ -1378,14 +1378,14 @@ const SessionPage = () => {
               <h2 className="text-2xl font-bold mb-2">Add your first song</h2>
               <p className="text-white/60 text-sm max-w-sm mx-auto">
                 Search for any track or paste a YouTube link. Once you've got a few songs,
-                {isHost ? " you can start the session." : " the host will start the session."}
+                {canHost ? " you can start the session." : " the host will start the session."}
               </p>
             </div>
           </motion.section>
         )}
 
         {/* ─── STAGE: building (guest, has songs, not yet started) ─── */}
-        {stage === "building" && !isHost && (
+        {stage === "building" && !canHost && (
           <section className="px-4 pt-6 pb-2">
             <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 to-orange-500/10 border border-amber-500/30 flex items-center gap-4">
               <div className="p-2 rounded-xl bg-amber-500/20">
@@ -1673,7 +1673,7 @@ const SessionPage = () => {
                 <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-bold">
                   2
                 </div>
-                <span>{isHost ? "Start session" : "Wait for host"}</span>
+                <span>{canHost ? "Start session" : "Wait for host"}</span>
               </div>
               <ArrowRight className="w-3 h-3" />
               <div className="flex items-center gap-2">
@@ -1763,7 +1763,8 @@ const SessionPage = () => {
         open={showParticipantsModal && session?.is_private === 1}
         onClose={() => setShowParticipantsModal(false)}
         liveParticipants={liveParticipants}
-        isHost={isHost}
+        canInvite={canHost}
+        canManageRoles={isHost}
         inviteEmail={inviteEmail}
         setInviteEmail={setInviteEmail}
         onSendInvite={sendInvite}
