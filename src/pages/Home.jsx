@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ensureGuestToken } from "../utils/auth";
+import HomePoll from "../components/HomePoll";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").replace(/\/+$/, "");
 import {
@@ -162,6 +163,11 @@ export default function Home() {
                 <Users className="w-5 h-5" />
                 <span>Join a Session</span>
               </button>
+            </div>
+
+            {/* Live anonymous poll (#44) */}
+            <div className="mb-12">
+              <HomePoll />
             </div>
 
             {/* Demo Video Placeholder */}
