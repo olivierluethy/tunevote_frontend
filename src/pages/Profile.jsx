@@ -1,6 +1,7 @@
 // src/pages/Profile.jsx
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import PolarMoment from "../components/PolarMoment";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -1292,6 +1293,11 @@ export default function Profile() {
             </div>
           </div>
         </motion.div>
+
+        {/* Polar Moment rank-gap stat (#50) */}
+        <div className="mb-5">
+          <PolarMoment />
+        </div>
 
         {/* TAB BAR */}
         <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.04] border border-white/10 mb-5 overflow-x-auto">
