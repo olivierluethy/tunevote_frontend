@@ -153,13 +153,23 @@ const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
       ? `🗳 Abstimmung${proposer ? ` · ${proposer}` : ""}`
       : `👤 ${proposer || "Abstimmung läuft"}`;
 
+  // Swipe-right to vote (#68) — only single-action / gathering cards with one
+  // clear yes action; polls keep their per-option buttons. Buttons still work.
+  const swipeable = !req.is_poll && !disabled && !myVote;
+
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className={`rounded-2xl border p-4 ${
+      drag={swipeable ? "x" : false}
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={{ left: 0, right: 0.7 }}
+      onDragEnd={(_, info) => {
+        if (swipeable && info.offset.x > 90) onVote(req.id);
+      }}
+      className={`rounded-2xl border p-4 ${swipeable ? "cursor-grab active:cursor-grabbing" : ""} ${
         gathering
           ? "border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-yellow-500/10"
           : "border-violet-500/30 bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10"
@@ -178,6 +188,12 @@ const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
           {remaining}s
         </span>
       </div>
+
+      {swipeable && (
+        <p className="mt-1 text-[10px] text-white/30">
+          → nach rechts wischen für 👍
+        </p>
+      )}
 
       {req.preview && (
         <div className="mt-3 space-y-1 rounded-xl bg-black/20 p-2.5 text-[11px]">
