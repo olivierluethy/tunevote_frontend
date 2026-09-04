@@ -61,6 +61,20 @@ const RulesSheet = ({ open, onClose, onCreatePoll, disabled }) => {
             )
           }
         />
+        <RuleRow
+          title="Auto-Pause"
+          desc="Automatisch eine Pause vorschlagen nach X Songs"
+          disabled={disabled}
+          onClick={() => {
+            onCreatePoll("Automatische Pausen-Regel?", [
+              { id: "off", label: "Aus", type: "set_rule", payload: { key: "auto_pause_after_songs", value: null } },
+              { id: "ap5", label: "nach 5", type: "set_rule", payload: { key: "auto_pause_after_songs", value: 5 } },
+              { id: "ap8", label: "nach 8", type: "set_rule", payload: { key: "auto_pause_after_songs", value: 8 } },
+              { id: "ap12", label: "nach 12", type: "set_rule", payload: { key: "auto_pause_after_songs", value: 12 } },
+            ]);
+            onClose();
+          }}
+        />
       </div>
     </BottomSheet>
   );

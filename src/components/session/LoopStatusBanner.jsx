@@ -35,13 +35,22 @@ const LoopStatusBanner = ({ loops = [], onEnd, onSetRuns, onPoll, disabled }) =>
                     {loop.songs?.join(" → ") || "Loop"}
                   </p>
                 </div>
-                <button
-                  onClick={() => onEnd(loop.id)}
-                  disabled={disabled}
-                  className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-40"
-                >
-                  ⏹ Beenden
-                </button>
+                <div className="flex shrink-0 gap-1.5">
+                  <button
+                    onClick={() => onEnd(loop.id, false)}
+                    disabled={disabled}
+                    className="rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-40"
+                  >
+                    ⏹ Beenden
+                  </button>
+                  <button
+                    onClick={() => onEnd(loop.id, true)}
+                    disabled={disabled}
+                    className="rounded-lg bg-red-500/20 px-3 py-2 text-xs font-semibold text-red-200 transition-colors hover:bg-red-500/30 disabled:opacity-40"
+                  >
+                    ⏹⏹ Sofort
+                  </button>
+                </div>
               </div>
 
               <div className="mt-3 flex items-center gap-1.5">
