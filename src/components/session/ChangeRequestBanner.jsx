@@ -66,7 +66,58 @@ const PollOptions = ({ req, myVote, onVote, disabled }) => {
   );
 };
 
-const OneRequest = ({ req, onVote, myVote, disabled }) => {
+// Ranking poll: tap options in preference order, then submit. Shows the current
+// Borda points per option.
+const RankingOptions = ({ req, onRank, disabled }) => {
+  const [order, setOrder] = useState([]);
+  const toggle = (id) =>
+    setOrder((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  const rankOf = (id) => {
+    const i = order.indexOf(id);
+    return i >= 0 ? i + 1 : null;
+  };
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      {req.options.map((opt) => {
+        const r = rankOf(opt.id);
+        return (
+          <button
+            key={opt.id}
+            onClick={() => toggle(opt.id)}
+            disabled={disabled}
+            className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors disabled:opacity-40 ${
+              r
+                ? "border-violet-400 bg-violet-500/20 text-white"
+                : "border-white/10 bg-white/5 text-white/90 hover:bg-white/10"
+            }`}
+          >
+            <span className="truncate">
+              {r ? `${r}. ` : ""}
+              {opt.label}
+            </span>
+            <span className="shrink-0 tabular-nums text-xs text-white/60">
+              {opt.votes} P.
+            </span>
+          </button>
+        );
+      })}
+      <button
+        onClick={() => onRank(req.id, order)}
+        disabled={disabled || !order.length}
+        className="mt-1 rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-400 disabled:opacity-40"
+      >
+        Reihenfolge abschicken
+      </button>
+      <p className="text-[11px] text-white/40">
+        Tippe die Optionen in Wunsch-Reihenfolge · Borda-Punkte
+      </p>
+    </div>
+  );
+};
+
+const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
   const remaining = useCountdown(req.expires_at);
   const pct = req.needed ? Math.min(100, (req.votes / req.needed) * 100) : 0;
 
@@ -99,7 +150,9 @@ const OneRequest = ({ req, onVote, myVote, disabled }) => {
         </div>
       )}
 
-      {req.is_poll ? (
+      {req.is_poll && req.vote_method === "ranking" ? (
+        <RankingOptions req={req} onRank={onRank} disabled={disabled} />
+      ) : req.is_poll ? (
         <PollOptions req={req} myVote={myVote} onVote={onVote} disabled={disabled} />
       ) : (
         <div className="mt-3 flex items-center gap-3">
@@ -129,7 +182,13 @@ const OneRequest = ({ req, onVote, myVote, disabled }) => {
 
 // Stack of currently-open change requests / polls. Purely presentational — data
 // and socket handling live in SessionPage. `myVotes` maps crId → optionId | true.
-const ChangeRequestBanner = ({ requests = [], onVote, myVotes = {}, disabled }) => {
+const ChangeRequestBanner = ({
+  requests = [],
+  onVote,
+  onRank,
+  myVotes = {},
+  disabled,
+}) => {
   if (!requests.length) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -139,6 +198,7 @@ const ChangeRequestBanner = ({ requests = [], onVote, myVotes = {}, disabled }) 
             key={req.id}
             req={req}
             onVote={onVote}
+            onRank={onRank}
             myVote={myVotes[req.id]}
             disabled={disabled}
           />

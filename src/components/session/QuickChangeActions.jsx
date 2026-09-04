@@ -11,6 +11,9 @@ const LOOP_COUNTS = [3, 5, 10];
 const QuickChangeActions = ({
   onCreate,
   onOpenHistory,
+  onOpenMetrics,
+  onOpenRules,
+  onOrderPoll,
   currentSong,
   queuedSongs = [],
   disabled,
@@ -57,6 +60,32 @@ const QuickChangeActions = ({
           <BigButton danger onClick={() => act("end_session")}>
             🛑 Beenden
           </BigButton>
+          <BigButton
+            onClick={() => {
+              setOpen(false);
+              onOpenMetrics?.();
+            }}
+          >
+            📊 Statistik
+          </BigButton>
+          <BigButton
+            onClick={() => {
+              setOpen(false);
+              onOpenRules?.();
+            }}
+          >
+            🛡 Regeln
+          </BigButton>
+          {queuedSongs.length >= 2 && onOrderPoll && (
+            <BigButton
+              onClick={() => {
+                setOpen(false);
+                onOrderPoll();
+              }}
+            >
+              🔀 Reihenfolge
+            </BigButton>
+          )}
         </div>
 
         {/* Per-song actions */}
