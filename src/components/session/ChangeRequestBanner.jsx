@@ -12,6 +12,19 @@ const useCountdown = (iso) => {
   return Math.max(0, Math.round((new Date(iso).getTime() - now) / 1000));
 };
 
+// One "Jetzt / Danach" line: the first few queue labels joined with arrows.
+const PreviewLine = ({ label, items = [], muted }) => (
+  <div className="flex items-baseline gap-2">
+    <span className="w-12 shrink-0 uppercase tracking-wider text-white/40">
+      {label}
+    </span>
+    <span className={`truncate ${muted ? "text-white/50" : "text-white/90"}`}>
+      {items.slice(0, 5).join("  →  ") || "—"}
+      {items.length > 5 ? "  →  …" : ""}
+    </span>
+  </div>
+);
+
 const OneRequest = ({ req, onVote, voted, disabled }) => {
   const remaining = useCountdown(req.expires_at);
   const pct = req.needed ? Math.min(100, (req.votes / req.needed) * 100) : 0;
@@ -37,6 +50,13 @@ const OneRequest = ({ req, onVote, voted, disabled }) => {
           {remaining}s
         </span>
       </div>
+
+      {req.preview && (
+        <div className="mt-3 space-y-1 rounded-xl bg-black/20 p-2.5 text-[11px]">
+          <PreviewLine label="Jetzt" items={req.preview.before} muted />
+          <PreviewLine label="Danach" items={req.preview.after} />
+        </div>
+      )}
 
       <div className="mt-3 flex items-center gap-3">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">

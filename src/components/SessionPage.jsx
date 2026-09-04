@@ -14,6 +14,7 @@ import NowPlayingCard from "./session/NowPlayingCard";
 import VotingBanner from "./session/VotingBanner";
 import ChangeRequestBanner from "./session/ChangeRequestBanner";
 import QuickChangeActions from "./session/QuickChangeActions";
+import ChangeHistory from "./session/ChangeHistory";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -116,6 +117,8 @@ const SessionPage = () => {
   // Generic change requests (#66/#67) — open votes + which ones I already backed.
   const [changeRequests, setChangeRequests] = useState([]);
   const [votedCrIds, setVotedCrIds] = useState(() => new Set());
+  const [sessionEvents, setSessionEvents] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -326,6 +329,22 @@ const SessionPage = () => {
       );
     }
   };
+
+  const loadSessionEvents = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await axios.get(`${API_BASE}/sessions/${sessionId}/events`, {
+        headers: getAuthHeaders(),
+      });
+      setSessionEvents(res.data || []);
+    } catch (e) {
+      console.warn("[change-requests] events load failed", e?.response?.status);
+    }
+  }, [sessionId]);
+
+  // Undo is itself a democratic change request over a logged event.
+  const undoEvent = (eventId) =>
+    createChangeRequest("undo_event", { event_id: eventId });
 
   const saveSessionName = async () => {
     const newName = editingName.trim();
@@ -710,11 +729,13 @@ const SessionPage = () => {
     socketRef.current.on("change_request_resolved", (dto) => {
       setChangeRequests((prev) => prev.filter((c) => c.id !== dto.id));
       loadSessionData();
+      loadSessionEvents();
       if (dto.type === "end_session" && dto.status === "applied") {
         setSessionLive(false);
       }
     });
     loadChangeRequests();
+    loadSessionEvents();
 
     if (isHost && sessionId) {
       socketRef.current.emit("join-session-host", sessionId);
@@ -1595,6 +1616,10 @@ const SessionPage = () => {
                 />
                 <QuickChangeActions
                   onCreate={createChangeRequest}
+                  onOpenHistory={() => {
+                    loadSessionEvents();
+                    setHistoryOpen(true);
+                  }}
                   currentSong={currentSong}
                   queuedSongs={queuedSongs}
                   disabled={!isLiveJoined}
@@ -1883,6 +1908,17 @@ const SessionPage = () => {
         setEditingName={setEditingName}
         onSave={saveSessionName}
         saving={savingName}
+      />
+
+      <ChangeHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        events={sessionEvents}
+        onUndo={(eventId) => {
+          undoEvent(eventId);
+          setHistoryOpen(false);
+        }}
+        disabled={!isLiveJoined}
       />
     </div>
   );
