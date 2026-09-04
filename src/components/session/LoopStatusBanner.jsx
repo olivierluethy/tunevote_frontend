@@ -5,7 +5,7 @@ const RUN_OPTIONS = [3, 5, 10, null]; // null = endless
 // Live status for active loops (#66/#68): "🔁 Loop aktiv · Durchlauf 3/10" with
 // one-tap Beenden and a run-count setter. Every action starts a democratic
 // change request (onEnd / onSetRuns), shown as a vote by ChangeRequestBanner.
-const LoopStatusBanner = ({ loops = [], onEnd, onSetRuns, disabled }) => {
+const LoopStatusBanner = ({ loops = [], onEnd, onSetRuns, onPoll, disabled }) => {
   if (!loops.length) return null;
 
   return (
@@ -56,6 +56,15 @@ const LoopStatusBanner = ({ loops = [], onEnd, onSetRuns, disabled }) => {
                     {n == null ? "∞" : `×${n}`}
                   </button>
                 ))}
+                {onPoll && (
+                  <button
+                    onClick={() => onPoll(loop)}
+                    disabled={disabled}
+                    className="ml-auto rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-40"
+                  >
+                    🗳 Abstimmen
+                  </button>
+                )}
               </div>
             </motion.div>
           );
