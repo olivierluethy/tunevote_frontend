@@ -75,6 +75,18 @@ const RulesSheet = ({ open, onClose, onCreatePoll, disabled }) => {
             onClose();
           }}
         />
+        <RuleRow
+          title="Bei Ablauf entscheiden"
+          desc="Bei Ablauf gewinnt die Mehrheit — auch ohne volles Quorum"
+          disabled={disabled}
+          onClick={() => {
+            onCreatePoll("Bei Ablauf soll die Mehrheit entscheiden?", [
+              { id: "on", label: "An", type: "set_rule", payload: { key: "poll_decide_on_expiry", value: 1 } },
+              { id: "off", label: "Aus", type: "set_rule", payload: { key: "poll_decide_on_expiry", value: 0 } },
+            ]);
+            onClose();
+          }}
+        />
       </div>
     </BottomSheet>
   );
