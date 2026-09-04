@@ -19,6 +19,7 @@ import LoopStatusBanner from "./session/LoopStatusBanner";
 import MetricsSheet from "./session/MetricsSheet";
 import RulesSheet from "./session/RulesSheet";
 import ReorderSheet from "./session/ReorderSheet";
+import SongActionSheet from "./session/SongActionSheet";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -128,6 +129,7 @@ const SessionPage = () => {
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [reorderOpen, setReorderOpen] = useState(false);
+  const [actionSong, setActionSong] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -1956,6 +1958,9 @@ const SessionPage = () => {
                 }
                 canAddSongs={canAddSongs}
                 onAddBreak={() => setShowBreakModal(true)}
+                onLongPressItem={
+                  isLiveJoined ? (item) => setActionSong(item) : undefined
+                }
               />
             ) : (
               <section className="px-4 pt-2 pb-3">
@@ -2073,6 +2078,20 @@ const SessionPage = () => {
         onClose={() => setReorderOpen(false)}
         songs={queuedSongs}
         onMove={proposeMove}
+        disabled={!isLiveJoined}
+      />
+
+      <SongActionSheet
+        open={!!actionSong}
+        onClose={() => setActionSong(null)}
+        song={actionSong}
+        onMoveFront={(id) => proposeMove(id, null)}
+        onLoop={(id, n) =>
+          createChangeRequest("create_loop", { queue_item_ids: [id], repeat: n })
+        }
+        onRemove={(id) =>
+          createChangeRequest("remove_queued_item", { queue_item_id: id })
+        }
         disabled={!isLiveJoined}
       />
     </div>
