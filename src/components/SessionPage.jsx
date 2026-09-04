@@ -18,6 +18,7 @@ import ChangeHistory from "./session/ChangeHistory";
 import LoopStatusBanner from "./session/LoopStatusBanner";
 import MetricsSheet from "./session/MetricsSheet";
 import RulesSheet from "./session/RulesSheet";
+import ReorderSheet from "./session/ReorderSheet";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -126,6 +127,7 @@ const SessionPage = () => {
   const [activeLoops, setActiveLoops] = useState([]);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [reorderOpen, setReorderOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -371,6 +373,13 @@ const SessionPage = () => {
       );
     }
   };
+
+  // Drag & drop reorder (#68): each move is a democratic move_item proposal.
+  const proposeMove = (queueItemId, afterItemId) =>
+    createChangeRequest("move_item", {
+      queue_item_id: queueItemId,
+      after_item_id: afterItemId,
+    });
 
   // Alternative-flow demo: vote on the order of the next two queued songs.
   const startOrderPoll = () => {
@@ -1742,6 +1751,7 @@ const SessionPage = () => {
                   onOpenMetrics={() => setMetricsOpen(true)}
                   onOpenRules={() => setRulesOpen(true)}
                   onOrderPoll={startOrderPoll}
+                  onOpenReorder={() => setReorderOpen(true)}
                   currentSong={currentSong}
                   queuedSongs={queuedSongs}
                   disabled={!isLiveJoined}
@@ -2055,6 +2065,14 @@ const SessionPage = () => {
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
         onCreatePoll={createPoll}
+        disabled={!isLiveJoined}
+      />
+
+      <ReorderSheet
+        open={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+        songs={queuedSongs}
+        onMove={proposeMove}
         disabled={!isLiveJoined}
       />
     </div>

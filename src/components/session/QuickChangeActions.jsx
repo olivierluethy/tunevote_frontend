@@ -14,6 +14,7 @@ const QuickChangeActions = ({
   onOpenMetrics,
   onOpenRules,
   onOrderPoll,
+  onOpenReorder,
   currentSong,
   queuedSongs = [],
   disabled,
@@ -110,6 +111,16 @@ const QuickChangeActions = ({
               }}
             >
               🔀 Reihenfolge
+            </BigButton>
+          )}
+          {queuedSongs.length >= 2 && onOpenReorder && (
+            <BigButton
+              onClick={() => {
+                setOpen(false);
+                onOpenReorder();
+              }}
+            >
+              ↕ Queue ordnen
             </BigButton>
           )}
         </div>
