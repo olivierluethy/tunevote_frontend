@@ -12,6 +12,8 @@ import ReactionBar from "./session/ReactionBar";
 import SessionHeader from "./session/SessionHeader";
 import NowPlayingCard from "./session/NowPlayingCard";
 import VotingBanner from "./session/VotingBanner";
+import ChangeRequestBanner from "./session/ChangeRequestBanner";
+import QuickChangeActions from "./session/QuickChangeActions";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -111,6 +113,9 @@ const SessionPage = () => {
   const [session, setSession] = useState(null);
   const [proposals, setProposals] = useState([]);
   const [queue, setQueue] = useState([]);
+  // Generic change requests (#66/#67) — open votes + which ones I already backed.
+  const [changeRequests, setChangeRequests] = useState([]);
+  const [votedCrIds, setVotedCrIds] = useState(() => new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -274,6 +279,52 @@ const SessionPage = () => {
           ? { "x-guest-token": guestToken }
           : {}),
     };
+  };
+
+  // --- Generic change requests (#66/#67) -----------------------------------
+  const loadChangeRequests = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await axios.get(
+        `${API_BASE}/sessions/${sessionId}/change-requests`,
+        { headers: getAuthHeaders() }
+      );
+      setChangeRequests(res.data?.open || []);
+    } catch (e) {
+      console.warn("[change-requests] load failed", e?.response?.status);
+    }
+  }, [sessionId]);
+
+  const createChangeRequest = async (type, payload) => {
+    try {
+      await axios.post(
+        `${API_BASE}/sessions/${sessionId}/change-requests`,
+        { type, payload },
+        { headers: getAuthHeaders() }
+      );
+      // Proposing counts as backing it — reflect that immediately.
+    } catch (e) {
+      console.error(
+        "[change-requests] create failed",
+        e?.response?.data?.error || e.message
+      );
+    }
+  };
+
+  const voteChangeRequest = async (crId) => {
+    setVotedCrIds((prev) => new Set(prev).add(crId));
+    try {
+      await axios.post(
+        `${API_BASE}/change-requests/${crId}/vote`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+    } catch (e) {
+      console.error(
+        "[change-requests] vote failed",
+        e?.response?.data?.error || e.message
+      );
+    }
   };
 
   const saveSessionName = async () => {
@@ -647,6 +698,23 @@ const SessionPage = () => {
         setSession((prev) => (prev ? { ...prev, title: data.title } : prev));
       }
     });
+
+    // Generic change requests (#66/#67): keep the open list live and refresh the
+    // session view when one resolves (queue/playback may have changed).
+    const upsertCr = (dto) =>
+      setChangeRequests((prev) =>
+        [...prev.filter((c) => c.id !== dto.id), dto].sort((a, b) => a.id - b.id)
+      );
+    socketRef.current.on("change_request_created", upsertCr);
+    socketRef.current.on("change_request_updated", upsertCr);
+    socketRef.current.on("change_request_resolved", (dto) => {
+      setChangeRequests((prev) => prev.filter((c) => c.id !== dto.id));
+      loadSessionData();
+      if (dto.type === "end_session" && dto.status === "applied") {
+        setSessionLive(false);
+      }
+    });
+    loadChangeRequests();
 
     if (isHost && sessionId) {
       socketRef.current.emit("join-session-host", sessionId);
@@ -1515,6 +1583,24 @@ const SessionPage = () => {
               votingPhase={votingPhase}
               timeRemaining={timeRemaining}
             />
+
+            {/* #66/#67 — generic democratic change requests */}
+            {sessionLive && (
+              <div className="flex flex-col gap-2">
+                <ChangeRequestBanner
+                  requests={changeRequests}
+                  onVote={voteChangeRequest}
+                  votedIds={votedCrIds}
+                  disabled={!isLiveJoined}
+                />
+                <QuickChangeActions
+                  onCreate={createChangeRequest}
+                  currentSong={currentSong}
+                  queuedSongs={queuedSongs}
+                  disabled={!isLiveJoined}
+                />
+              </div>
+            )}
 
             {/* #27 — live-user majority "regenerate AI suggestions" */}
             {stage === "live-suggesting" &&
