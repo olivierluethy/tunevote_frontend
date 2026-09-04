@@ -400,6 +400,13 @@ const SessionPage = () => {
     createChangeRequest("skip_section", { section_id: id });
   const jumpSection = (id) =>
     createChangeRequest("jump_to_section", { section_id: id });
+  const moveSection = (id, afterId) =>
+    createChangeRequest("move_section", {
+      section_id: id,
+      after_section_id: afterId,
+    });
+  const renameSection = (id, name) =>
+    createChangeRequest("rename_section", { section_id: id, name });
 
   // Änderungsplan (#67): bundle several actions into one plan vs. "nichts".
   const submitPlan = (actions, summary) =>
@@ -2154,6 +2161,8 @@ const SessionPage = () => {
         onCreate={proposeSection}
         onSkip={skipSection}
         onJump={jumpSection}
+        onMove={moveSection}
+        onRename={renameSection}
         disabled={!isLiveJoined}
       />
     </div>
