@@ -117,9 +117,41 @@ const RankingOptions = ({ req, onRank, disabled }) => {
   );
 };
 
+// Gathering suggestion (#67): needs `min_support` backers before it becomes a
+// vote. Amber to set it apart from live votes.
+const SupportRow = ({ req, onVote, supported, disabled }) => (
+  <div className="mt-3 flex items-center gap-3">
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+      <div
+        className="h-full bg-amber-400"
+        style={{
+          width: `${Math.min(100, (req.votes / req.min_support) * 100)}%`,
+        }}
+      />
+    </div>
+    <span className="shrink-0 text-xs tabular-nums text-white/60">
+      {req.votes}/{req.min_support} Unterstützer
+    </span>
+    <button
+      onClick={() => onVote(req.id)}
+      disabled={supported || disabled}
+      className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition-colors hover:bg-amber-400 disabled:opacity-40"
+    >
+      {supported ? "✓" : "＋ Unterstützen"}
+    </button>
+  </div>
+);
+
 const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
   const remaining = useCountdown(req.expires_at);
   const pct = req.needed ? Math.min(100, (req.votes / req.needed) * 100) : 0;
+  const gathering = req.min_support && !req.activated;
+  const proposer = req.proposer_name;
+  const label = gathering
+    ? `💡 ${proposer || "Jemand"} schlägt vor`
+    : req.is_poll
+      ? `🗳 Abstimmung${proposer ? ` · ${proposer}` : ""}`
+      : `👤 ${proposer || "Abstimmung läuft"}`;
 
   return (
     <motion.div
@@ -127,12 +159,16 @@ const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10 p-4"
+      className={`rounded-2xl border p-4 ${
+        gathering
+          ? "border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-yellow-500/10"
+          : "border-violet-500/30 bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10"
+      }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-violet-200/70">
-            {req.is_poll ? "Abstimmung — wähle eine Option" : "Abstimmung läuft"}
+          <p className="text-[11px] font-medium uppercase tracking-wider text-white/60">
+            {label}
           </p>
           <p className="truncate text-sm font-semibold text-white">
             {req.description}
@@ -150,7 +186,14 @@ const OneRequest = ({ req, onVote, onRank, myVote, disabled }) => {
         </div>
       )}
 
-      {req.is_poll && req.vote_method === "ranking" ? (
+      {gathering ? (
+        <SupportRow
+          req={req}
+          onVote={onVote}
+          supported={!!myVote}
+          disabled={disabled}
+        />
+      ) : req.is_poll && req.vote_method === "ranking" ? (
         <RankingOptions req={req} onRank={onRank} disabled={disabled} />
       ) : req.is_poll ? (
         <PollOptions req={req} myVote={myVote} onVote={onVote} disabled={disabled} />

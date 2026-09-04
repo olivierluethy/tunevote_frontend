@@ -20,12 +20,21 @@ const QuickChangeActions = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupSel, setGroupSel] = useState([]);
 
-  const act = (type, payload) => {
-    onCreate(type, payload);
+  const act = (type, payload, opts) => {
+    onCreate(type, payload, opts);
     setOpen(false);
     setExpandedId(null);
+    setGroupMode(false);
+    setGroupSel([]);
   };
+
+  const toggleSel = (id) =>
+    setGroupSel((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
 
   if (disabled) return null;
 
@@ -48,6 +57,13 @@ const QuickChangeActions = ({
           </BigButton>
           <BigButton onClick={() => act("insert_pause", { duration_seconds: 30 })}>
             ⏸️ Pause 30s
+          </BigButton>
+          <BigButton
+            onClick={() =>
+              act("insert_pause", { duration_seconds: 30 }, { minSupport: 3 })
+            }
+          >
+            💡 Pause vorschlagen
           </BigButton>
           <BigButton
             onClick={() => {
@@ -89,9 +105,55 @@ const QuickChangeActions = ({
         </div>
 
         {/* Per-song actions */}
-        <p className="mb-2 mt-5 px-1 text-[11px] font-medium uppercase tracking-wider text-white/40">
-          Songs
-        </p>
+        <div className="mb-2 mt-5 flex items-center justify-between px-1">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-white/40">
+            Songs
+          </p>
+          {queuedSongs.length >= 2 && (
+            <button
+              onClick={() => {
+                setGroupMode((v) => !v);
+                setGroupSel([]);
+              }}
+              className="text-[11px] font-semibold text-violet-300"
+            >
+              {groupMode ? "✕ Abbrechen" : "🔁 Mehrere loopen"}
+            </button>
+          )}
+        </div>
+
+        {groupMode ? (
+          <div className="flex flex-col gap-1.5">
+            {queuedSongs.map((s) => {
+              const sel = groupSel.includes(s.id);
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => toggleSel(s.id)}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
+                    sel
+                      ? "border-violet-400 bg-violet-500/20 text-white"
+                      : "border-white/10 bg-white/5 text-white/90 hover:bg-white/10"
+                  }`}
+                >
+                  <span className="text-base">{sel ? "☑" : "☐"}</span>
+                  <span className="truncate">{songTitle(s)}</span>
+                </button>
+              );
+            })}
+            <div className="sticky bottom-0 mt-1 flex items-center gap-1.5 rounded-xl bg-black/40 p-2 backdrop-blur">
+              <span className="shrink-0 text-xs text-white/50">
+                {groupSel.length} gewählt →
+              </span>
+              <LoopButtons
+                onLoop={(n) =>
+                  groupSel.length &&
+                  act("create_loop", { queue_item_ids: groupSel, repeat: n })
+                }
+              />
+            </div>
+          </div>
+        ) : (
         <ul className="flex flex-col gap-1.5">
           {currentSong && (
             <SongRow
@@ -151,6 +213,7 @@ const QuickChangeActions = ({
             </li>
           )}
         </ul>
+        )}
       </BottomSheet>
     </>
   );

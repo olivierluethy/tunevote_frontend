@@ -305,11 +305,13 @@ const SessionPage = () => {
     }
   }, [sessionId]);
 
-  const createChangeRequest = async (type, payload) => {
+  const createChangeRequest = async (type, payload, opts = {}) => {
     try {
+      const body = { type, payload };
+      if (opts.minSupport) body.min_support = opts.minSupport;
       await axios.post(
         `${API_BASE}/sessions/${sessionId}/change-requests`,
-        { type, payload },
+        body,
         { headers: getAuthHeaders() }
       );
       // Proposing counts as backing it — reflect that immediately.
@@ -415,7 +417,8 @@ const SessionPage = () => {
   }, [sessionId]);
 
   // Ending / re-sizing a loop are themselves democratic change requests.
-  const endLoop = (loopId) => createChangeRequest("end_loop", { loop_id: loopId });
+  const endLoop = (loopId, hard = false) =>
+    createChangeRequest("end_loop", { loop_id: loopId, hard });
   const setLoopRuns = (loopId, totalRuns) =>
     createChangeRequest("set_loop_runs", {
       loop_id: loopId,
