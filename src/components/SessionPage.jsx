@@ -20,6 +20,7 @@ import MetricsSheet from "./session/MetricsSheet";
 import RulesSheet from "./session/RulesSheet";
 import ReorderSheet from "./session/ReorderSheet";
 import SongActionSheet from "./session/SongActionSheet";
+import PlanBuilderSheet from "./session/PlanBuilderSheet";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -130,6 +131,7 @@ const SessionPage = () => {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [reorderOpen, setReorderOpen] = useState(false);
   const [actionSong, setActionSong] = useState(null);
+  const [planOpen, setPlanOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -375,6 +377,13 @@ const SessionPage = () => {
       );
     }
   };
+
+  // Änderungsplan (#67): bundle several actions into one plan vs. "nichts".
+  const submitPlan = (actions, summary) =>
+    createPoll("Diesen Änderungsplan annehmen?", [
+      { id: "plan", label: summary?.slice(0, 80) || "Plan annehmen", actions },
+      { id: "no", label: "Nichts ändern", type: "none" },
+    ]);
 
   // Drag & drop reorder (#68): each move is a democratic move_item proposal.
   const proposeMove = (queueItemId, afterItemId) =>
@@ -1754,6 +1763,7 @@ const SessionPage = () => {
                   onOpenRules={() => setRulesOpen(true)}
                   onOrderPoll={startOrderPoll}
                   onOpenReorder={() => setReorderOpen(true)}
+                  onOpenPlan={() => setPlanOpen(true)}
                   currentSong={currentSong}
                   queuedSongs={queuedSongs}
                   disabled={!isLiveJoined}
@@ -2092,6 +2102,14 @@ const SessionPage = () => {
         onRemove={(id) =>
           createChangeRequest("remove_queued_item", { queue_item_id: id })
         }
+        disabled={!isLiveJoined}
+      />
+
+      <PlanBuilderSheet
+        open={planOpen}
+        onClose={() => setPlanOpen(false)}
+        queuedSongs={queuedSongs}
+        onSubmit={submitPlan}
         disabled={!isLiveJoined}
       />
     </div>

@@ -15,6 +15,7 @@ const QuickChangeActions = ({
   onOpenRules,
   onOrderPoll,
   onOpenReorder,
+  onOpenPlan,
   currentSong,
   queuedSongs = [],
   disabled,
@@ -103,6 +104,16 @@ const QuickChangeActions = ({
           >
             🛡 Regeln
           </BigButton>
+          {onOpenPlan && (
+            <BigButton
+              onClick={() => {
+                setOpen(false);
+                onOpenPlan();
+              }}
+            >
+              🧩 Plan
+            </BigButton>
+          )}
           {queuedSongs.length >= 2 && onOrderPoll && (
             <BigButton
               onClick={() => {
