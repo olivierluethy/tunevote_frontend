@@ -16,6 +16,8 @@ import ChangeRequestBanner from "./session/ChangeRequestBanner";
 import QuickChangeActions from "./session/QuickChangeActions";
 import ChangeHistory from "./session/ChangeHistory";
 import LoopStatusBanner from "./session/LoopStatusBanner";
+import MetricsSheet from "./session/MetricsSheet";
+import RulesSheet from "./session/RulesSheet";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -122,6 +124,8 @@ const SessionPage = () => {
   const [sessionEvents, setSessionEvents] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeLoops, setActiveLoops] = useState([]);
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -347,6 +351,39 @@ const SessionPage = () => {
         e?.response?.data?.error || e.message
       );
     }
+  };
+
+  // Ranking poll: submit an ordered list of option ids.
+  const rankChangeRequest = async (crId, ranking) => {
+    setMyVotes((prev) => ({ ...prev, [crId]: ranking?.[0] ?? true }));
+    try {
+      await axios.post(
+        `${API_BASE}/change-requests/${crId}/vote`,
+        { ranking },
+        { headers: getAuthHeaders() }
+      );
+    } catch (e) {
+      console.error(
+        "[change-requests] rank failed",
+        e?.response?.data?.error || e.message
+      );
+    }
+  };
+
+  // Alternative-flow demo: vote on the order of the next two queued songs.
+  const startOrderPoll = () => {
+    const [a, b] = queuedSongs;
+    if (!a || !b) return;
+    const title = (s) => s.title || s.description || "Song";
+    createPoll(`Reihenfolge: „${title(a)}" vs „${title(b)}"?`, [
+      { id: "keep", label: `${title(a)} → ${title(b)}`, type: "none" },
+      {
+        id: "swap",
+        label: `${title(b)} → ${title(a)}`,
+        type: "move_item",
+        payload: { queue_item_id: b.id, after_item_id: null },
+      },
+    ]);
   };
 
   const loadSessionEvents = useCallback(async () => {
@@ -1689,6 +1726,7 @@ const SessionPage = () => {
                 <ChangeRequestBanner
                   requests={changeRequests}
                   onVote={voteChangeRequest}
+                  onRank={rankChangeRequest}
                   myVotes={myVotes}
                   disabled={!isLiveJoined}
                 />
@@ -1698,6 +1736,9 @@ const SessionPage = () => {
                     loadSessionEvents();
                     setHistoryOpen(true);
                   }}
+                  onOpenMetrics={() => setMetricsOpen(true)}
+                  onOpenRules={() => setRulesOpen(true)}
+                  onOrderPoll={startOrderPoll}
                   currentSong={currentSong}
                   queuedSongs={queuedSongs}
                   disabled={!isLiveJoined}
@@ -1996,6 +2037,21 @@ const SessionPage = () => {
           undoEvent(eventId);
           setHistoryOpen(false);
         }}
+        disabled={!isLiveJoined}
+      />
+
+      <MetricsSheet
+        open={metricsOpen}
+        onClose={() => setMetricsOpen(false)}
+        sessionId={sessionId}
+        apiBase={API_BASE}
+        headers={getAuthHeaders}
+      />
+
+      <RulesSheet
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        onCreatePoll={createPoll}
         disabled={!isLiveJoined}
       />
     </div>
