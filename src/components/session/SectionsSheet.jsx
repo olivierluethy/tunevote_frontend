@@ -11,10 +11,14 @@ const SectionsSheet = ({
   onCreate,
   onSkip,
   onJump,
+  onMove,
+  onRename,
   disabled,
 }) => {
   const [name, setName] = useState("");
   const [sel, setSel] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
   const toggle = (id) =>
     setSel((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const songTitle = (s) => s.title || s.description || "Song";
@@ -28,40 +32,102 @@ const SectionsSheet = ({
   };
 
   const active = sections.filter((s) => s.status === "active");
+  const moveUp = (i) => onMove(active[i].id, active[i - 2]?.id ?? null);
+  const moveDown = (i) => {
+    const after = active[i + 1]?.id;
+    if (after != null) onMove(active[i].id, after);
+  };
+  const saveName = (id) => {
+    if (editName.trim()) onRename(id, editName.trim());
+    setEditingId(null);
+  };
 
   return (
     <BottomSheet open={open} onClose={onClose} title="📚 Abschnitte">
       {active.length > 0 && (
         <ul className="mb-4 flex flex-col gap-2">
-          {active.map((s) => (
+          {active.map((s, i) => (
             <li
               key={s.id}
               className="rounded-xl border border-white/10 bg-white/5 p-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">
-                    📚 {s.name}
-                  </p>
-                  <p className="text-[11px] text-white/40">
-                    {s.queued_count} offen · {s.items.length} Songs
-                  </p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex flex-col">
+                    <button
+                      onClick={() => moveUp(i)}
+                      disabled={disabled || i === 0 || !s.queued_count}
+                      className="text-white/40 hover:text-white disabled:opacity-30"
+                      aria-label="Abschnitt nach oben"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => moveDown(i)}
+                      disabled={disabled || i === active.length - 1 || !s.queued_count}
+                      className="text-white/40 hover:text-white disabled:opacity-30"
+                      aria-label="Abschnitt nach unten"
+                    >
+                      ▼
+                    </button>
+                  </span>
+                  <div className="min-w-0">
+                    {editingId === s.id ? (
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveName(s.id)}
+                        maxLength={80}
+                        autoFocus
+                        className="w-full rounded-lg border border-violet-400 bg-white/10 px-2 py-1 text-sm text-white outline-none"
+                      />
+                    ) : (
+                      <p className="truncate text-sm font-semibold text-white">
+                        📚 {s.name}
+                        <button
+                          onClick={() => {
+                            setEditingId(s.id);
+                            setEditName(s.name);
+                          }}
+                          disabled={disabled}
+                          className="ml-1.5 text-white/40 hover:text-white disabled:opacity-30"
+                          aria-label="Umbenennen"
+                        >
+                          ✏️
+                        </button>
+                      </p>
+                    )}
+                    <p className="text-[11px] text-white/40">
+                      {s.queued_count} offen · {s.items.length} Songs
+                    </p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 gap-1.5">
-                  <button
-                    onClick={() => onJump(s.id)}
-                    disabled={disabled || !s.queued_count}
-                    className="rounded-lg bg-white/10 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-40"
-                  >
-                    ⏭ Anspringen
-                  </button>
-                  <button
-                    onClick={() => onSkip(s.id)}
-                    disabled={disabled || !s.queued_count}
-                    className="rounded-lg bg-red-500/15 px-2.5 py-2 text-xs font-semibold text-red-200 transition-colors hover:bg-red-500/25 disabled:opacity-40"
-                  >
-                    Überspringen
-                  </button>
+                  {editingId === s.id ? (
+                    <button
+                      onClick={() => saveName(s.id)}
+                      className="rounded-lg bg-violet-500 px-2.5 py-2 text-xs font-semibold text-white hover:bg-violet-400"
+                    >
+                      Speichern (Abstimmung)
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onJump(s.id)}
+                        disabled={disabled || !s.queued_count}
+                        className="rounded-lg bg-white/10 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-40"
+                      >
+                        ⏭ Anspringen
+                      </button>
+                      <button
+                        onClick={() => onSkip(s.id)}
+                        disabled={disabled || !s.queued_count}
+                        className="rounded-lg bg-red-500/15 px-2.5 py-2 text-xs font-semibold text-red-200 transition-colors hover:bg-red-500/25 disabled:opacity-40"
+                      >
+                        Überspringen
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </li>
