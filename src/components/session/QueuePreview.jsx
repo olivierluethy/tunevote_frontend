@@ -1,9 +1,11 @@
+import { useRef } from "react";
 import { motion } from "framer-motion";
 import { ListMusic, ChevronUp, ChevronDown, Timer } from "lucide-react";
 import Avatar from "../Avatar";
 
 // Compact "up next" list: next 3 items by default, expandable to the full
-// queue, plus the host's add-a-break button.
+// queue, plus the host's add-a-break button. Long-pressing an item opens its
+// extended options (#68) via onLongPressItem.
 const QueuePreview = ({
   queuedSongs,
   showAll,
@@ -13,7 +15,21 @@ const QueuePreview = ({
   showBreakButton,
   canAddSongs,
   onAddBreak,
-}) => (
+  onLongPressItem,
+}) => {
+  const pressTimer = useRef(null);
+  const startPress = (item) => {
+    if (!onLongPressItem) return;
+    pressTimer.current = setTimeout(() => onLongPressItem(item), 500);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  return (
   <section className="px-4 pt-2 pb-3">
     <div className="flex items-center justify-between mb-3">
       <h2 className="text-sm font-semibold text-white/80 flex items-center gap-2">
@@ -46,7 +62,13 @@ const QueuePreview = ({
             initial={{ opacity: 0, x: -6 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.03 }}
+            onPointerDown={() => startPress(item)}
+            onPointerUp={cancelPress}
+            onPointerLeave={cancelPress}
+            onPointerMove={cancelPress}
             className={`flex items-center gap-3 p-2 rounded-xl transition-all ${
+              onLongPressItem ? "select-none" : ""
+            } ${
               isCurrent
                 ? "bg-green-500/15 border border-green-500/30"
                 : item.item_type === "pause"
@@ -106,6 +128,7 @@ const QueuePreview = ({
       </button>
     )}
   </section>
-);
+  );
+};
 
 export default QueuePreview;
