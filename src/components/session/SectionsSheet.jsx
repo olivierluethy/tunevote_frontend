@@ -13,6 +13,8 @@ const SectionsSheet = ({
   onJump,
   onMove,
   onRename,
+  onSetCurrent,
+  onSetRule,
   disabled,
 }) => {
   const [name, setName] = useState("");
@@ -130,6 +132,49 @@ const SectionsSheet = ({
                   )}
                 </div>
               </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2">
+                {s.is_current ? (
+                  <span className="rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-medium text-emerald-300">
+                    ● aktuell
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => onSetCurrent(s.id)}
+                    disabled={disabled}
+                    className="rounded-lg bg-white/10 px-2 py-1 text-[11px] text-white/70 transition-colors hover:bg-white/20 disabled:opacity-40"
+                  >
+                    Als aktuell setzen
+                  </button>
+                )}
+                <span className="ml-1 text-[11px] text-white/40">Danach:</span>
+                <RuleChip
+                  active={s.on_complete === "none"}
+                  disabled={disabled}
+                  onClick={() => onSetRule(s.id, "none")}
+                >
+                  Nichts
+                </RuleChip>
+                <RuleChip
+                  active={s.on_complete === "propose_pause"}
+                  disabled={disabled}
+                  onClick={() => onSetRule(s.id, "propose_pause")}
+                >
+                  Pause
+                </RuleChip>
+                {active
+                  .filter((o) => o.id !== s.id)
+                  .map((o) => (
+                    <RuleChip
+                      key={o.id}
+                      active={s.on_complete === "jump_to" && s.on_complete_target === o.id}
+                      disabled={disabled}
+                      onClick={() => onSetRule(s.id, "jump_to", o.id)}
+                    >
+                      → {o.name}
+                    </RuleChip>
+                  ))}
+              </div>
             </li>
           ))}
         </ul>
@@ -180,5 +225,19 @@ const SectionsSheet = ({
     </BottomSheet>
   );
 };
+
+const RuleChip = ({ active, onClick, disabled, children }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+      active
+        ? "bg-violet-500/30 text-violet-100"
+        : "bg-white/10 text-white/60 hover:bg-white/20"
+    }`}
+  >
+    {children}
+  </button>
+);
 
 export default SectionsSheet;

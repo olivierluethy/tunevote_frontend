@@ -407,6 +407,14 @@ const SessionPage = () => {
     });
   const renameSection = (id, name) =>
     createChangeRequest("rename_section", { section_id: id, name });
+  const setCurrentSection = (id) =>
+    createChangeRequest("set_current_section", { section_id: id });
+  const setSectionRule = (id, onComplete, targetId) =>
+    createChangeRequest("set_section_on_complete", {
+      section_id: id,
+      on_complete: onComplete,
+      target_section_id: targetId ?? null,
+    });
 
   // Änderungsplan (#67): bundle several actions into one plan vs. "nichts".
   const submitPlan = (actions, summary) =>
@@ -2163,6 +2171,8 @@ const SessionPage = () => {
         onJump={jumpSection}
         onMove={moveSection}
         onRename={renameSection}
+        onSetCurrent={setCurrentSection}
+        onSetRule={setSectionRule}
         disabled={!isLiveJoined}
       />
     </div>
