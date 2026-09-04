@@ -21,6 +21,7 @@ import RulesSheet from "./session/RulesSheet";
 import ReorderSheet from "./session/ReorderSheet";
 import SongActionSheet from "./session/SongActionSheet";
 import PlanBuilderSheet from "./session/PlanBuilderSheet";
+import SectionsSheet from "./session/SectionsSheet";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -132,6 +133,8 @@ const SessionPage = () => {
   const [reorderOpen, setReorderOpen] = useState(false);
   const [actionSong, setActionSong] = useState(null);
   const [planOpen, setPlanOpen] = useState(false);
+  const [sectionsOpen, setSectionsOpen] = useState(false);
+  const [sections, setSections] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -377,6 +380,26 @@ const SessionPage = () => {
       );
     }
   };
+
+  // Named sections (#66) — all operations are democratic change requests.
+  const loadSections = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await axios.get(`${API_BASE}/sessions/${sessionId}/sections`, {
+        headers: getAuthHeaders(),
+      });
+      setSections(res.data || []);
+    } catch (e) {
+      console.warn("[sections] load failed", e?.response?.status);
+    }
+  }, [sessionId]);
+
+  const proposeSection = (name, ids) =>
+    createChangeRequest("create_section", { name, queue_item_ids: ids });
+  const skipSection = (id) =>
+    createChangeRequest("skip_section", { section_id: id });
+  const jumpSection = (id) =>
+    createChangeRequest("jump_to_section", { section_id: id });
 
   // Änderungsplan (#67): bundle several actions into one plan vs. "nichts".
   const submitPlan = (actions, summary) =>
@@ -864,9 +887,15 @@ const SessionPage = () => {
       });
     });
 
+    socketRef.current.on("sections_updated", () => {
+      loadSections();
+      loadSessionData();
+    });
+
     loadChangeRequests();
     loadSessionEvents();
     loadLoops();
+    loadSections();
 
     if (isHost && sessionId) {
       socketRef.current.emit("join-session-host", sessionId);
@@ -1764,6 +1793,10 @@ const SessionPage = () => {
                   onOrderPoll={startOrderPoll}
                   onOpenReorder={() => setReorderOpen(true)}
                   onOpenPlan={() => setPlanOpen(true)}
+                  onOpenSections={() => {
+                    loadSections();
+                    setSectionsOpen(true);
+                  }}
                   currentSong={currentSong}
                   queuedSongs={queuedSongs}
                   disabled={!isLiveJoined}
@@ -2110,6 +2143,17 @@ const SessionPage = () => {
         onClose={() => setPlanOpen(false)}
         queuedSongs={queuedSongs}
         onSubmit={submitPlan}
+        disabled={!isLiveJoined}
+      />
+
+      <SectionsSheet
+        open={sectionsOpen}
+        onClose={() => setSectionsOpen(false)}
+        sections={sections}
+        queuedSongs={queuedSongs}
+        onCreate={proposeSection}
+        onSkip={skipSection}
+        onJump={jumpSection}
         disabled={!isLiveJoined}
       />
     </div>
