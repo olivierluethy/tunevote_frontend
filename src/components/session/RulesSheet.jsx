@@ -87,6 +87,18 @@ const RulesSheet = ({ open, onClose, onCreatePoll, disabled }) => {
             onClose();
           }}
         />
+        <RuleRow
+          title="AI-Vorschläge"
+          desc="Der Assistent schlägt gelegentlich eine Pause vor (nie erzwungen)"
+          disabled={disabled}
+          onClick={() => {
+            onCreatePoll("AI-Vorschläge aktivieren?", [
+              { id: "on", label: "An", type: "set_rule", payload: { key: "ai_suggestions", value: 1 } },
+              { id: "off", label: "Aus", type: "set_rule", payload: { key: "ai_suggestions", value: 0 } },
+            ]);
+            onClose();
+          }}
+        />
       </div>
     </BottomSheet>
   );
