@@ -117,7 +117,8 @@ const SessionPage = () => {
   const [queue, setQueue] = useState([]);
   // Generic change requests (#66/#67) — open votes + which ones I already backed.
   const [changeRequests, setChangeRequests] = useState([]);
-  const [votedCrIds, setVotedCrIds] = useState(() => new Set());
+  // My vote per change request: crId -> optionId (poll) | true (approve).
+  const [myVotes, setMyVotes] = useState({});
   const [sessionEvents, setSessionEvents] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeLoops, setActiveLoops] = useState([]);
@@ -316,12 +317,28 @@ const SessionPage = () => {
     }
   };
 
-  const voteChangeRequest = async (crId) => {
-    setVotedCrIds((prev) => new Set(prev).add(crId));
+  // Start a multi-option poll (#67). options: [{ id, label, type, payload }].
+  const createPoll = async (question, options) => {
+    try {
+      await axios.post(
+        `${API_BASE}/sessions/${sessionId}/change-requests`,
+        { payload: { question }, options },
+        { headers: getAuthHeaders() }
+      );
+    } catch (e) {
+      console.error(
+        "[change-requests] poll failed",
+        e?.response?.data?.error || e.message
+      );
+    }
+  };
+
+  const voteChangeRequest = async (crId, optionId = null) => {
+    setMyVotes((prev) => ({ ...prev, [crId]: optionId ?? true }));
     try {
       await axios.post(
         `${API_BASE}/change-requests/${crId}/vote`,
-        {},
+        optionId ? { option_id: optionId } : {},
         { headers: getAuthHeaders() }
       );
     } catch (e) {
@@ -368,6 +385,24 @@ const SessionPage = () => {
       total_runs: totalRuns,
       endless: totalRuns == null,
     });
+
+  // Multi-option poll: let the group vote on how often a loop should repeat.
+  const startLoopCountPoll = (loop) => {
+    const label = loop.songs?.join(" → ") || "Loop";
+    const options = [3, 5, 10].map((n) => ({
+      id: `r${n}`,
+      label: `×${n}`,
+      type: "set_loop_runs",
+      payload: { loop_id: loop.id, total_runs: n },
+    }));
+    options.push({
+      id: "endless",
+      label: "∞ Endlos",
+      type: "set_loop_runs",
+      payload: { loop_id: loop.id, total_runs: null, endless: true },
+    });
+    createPoll(`Wie oft „${label}" loopen?`, options);
+  };
 
   const saveSessionName = async () => {
     const newName = editingName.trim();
@@ -1648,12 +1683,13 @@ const SessionPage = () => {
                   loops={activeLoops}
                   onEnd={endLoop}
                   onSetRuns={setLoopRuns}
+                  onPoll={startLoopCountPoll}
                   disabled={!isLiveJoined}
                 />
                 <ChangeRequestBanner
                   requests={changeRequests}
                   onVote={voteChangeRequest}
-                  votedIds={votedCrIds}
+                  myVotes={myVotes}
                   disabled={!isLiveJoined}
                 />
                 <QuickChangeActions
