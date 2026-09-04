@@ -21,19 +21,29 @@ const QuickChangeActions = ({
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [groupMode, setGroupMode] = useState(false);
-  const [groupSel, setGroupSel] = useState([]);
+  const [sequence, setSequence] = useState([]); // ordered loop steps
+  const [onComplete, setOnComplete] = useState("none");
 
   const act = (type, payload, opts) => {
     onCreate(type, payload, opts);
     setOpen(false);
     setExpandedId(null);
     setGroupMode(false);
-    setGroupSel([]);
+    setSequence([]);
+    setOnComplete("none");
   };
 
-  const toggleSel = (id) =>
-    setGroupSel((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+  const addMusic = (s) =>
+    setSequence((p) => [
+      ...p,
+      { kind: "music", id: s.id, title: s.title || s.description || "Song" },
+    ]);
+  const addPause = () =>
+    setSequence((p) => [...p, { kind: "pause", seconds: 30 }]);
+  const removeStep = (i) => setSequence((p) => p.filter((_, idx) => idx !== i));
+  const apiSteps = () =>
+    sequence.map((s) =>
+      s.kind === "pause" ? { pause_seconds: s.seconds } : { queue_item_id: s.id },
     );
 
   if (disabled) return null;
@@ -117,38 +127,89 @@ const QuickChangeActions = ({
               }}
               className="text-[11px] font-semibold text-violet-300"
             >
-              {groupMode ? "✕ Abbrechen" : "🔁 Mehrere loopen"}
+              {groupMode ? "✕ Abbrechen" : "🔁 Sequenz bauen"}
             </button>
           )}
         </div>
 
         {groupMode ? (
-          <div className="flex flex-col gap-1.5">
-            {queuedSongs.map((s) => {
-              const sel = groupSel.includes(s.id);
-              return (
+          <div className="flex flex-col gap-2">
+            {sequence.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 p-2">
+                {sequence.map((s, i) => (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs text-white"
+                  >
+                    {i > 0 && <span className="text-white/30">→</span>}
+                    <span className="max-w-[9rem] truncate">
+                      {s.kind === "pause" ? `⏸ ${s.seconds}s` : s.title}
+                    </span>
+                    <button
+                      onClick={() => removeStep(i)}
+                      className="text-white/50 hover:text-white"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <p className="px-1 text-[11px] uppercase tracking-wider text-white/40">
+              Schritt hinzufügen
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {queuedSongs.map((s) => (
                 <button
                   key={s.id}
-                  onClick={() => toggleSel(s.id)}
-                  className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
-                    sel
-                      ? "border-violet-400 bg-violet-500/20 text-white"
-                      : "border-white/10 bg-white/5 text-white/90 hover:bg-white/10"
-                  }`}
+                  onClick={() => addMusic(s)}
+                  className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-white/90 transition-colors hover:bg-white/10"
                 >
-                  <span className="text-base">{sel ? "☑" : "☐"}</span>
+                  <span className="text-violet-300">＋</span>
                   <span className="truncate">{songTitle(s)}</span>
                 </button>
-              );
-            })}
+              ))}
+              <button
+                onClick={addPause}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-white/90 transition-colors hover:bg-white/10"
+              >
+                <span className="text-violet-300">＋</span> ⏸ Pause 30s
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-white/50">Danach:</span>
+              {[
+                ["none", "Nichts"],
+                ["propose_pause", "Pause vorschlagen"],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  onClick={() => setOnComplete(v)}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    onComplete === v
+                      ? "bg-violet-500/30 text-violet-100"
+                      : "bg-white/10 text-white/70 hover:bg-white/20"
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
             <div className="sticky bottom-0 mt-1 flex items-center gap-1.5 rounded-xl bg-black/40 p-2 backdrop-blur">
               <span className="shrink-0 text-xs text-white/50">
-                {groupSel.length} gewählt →
+                {sequence.length} Schritte →
               </span>
               <LoopButtons
                 onLoop={(n) =>
-                  groupSel.length &&
-                  act("create_loop", { queue_item_ids: groupSel, repeat: n })
+                  sequence.some((x) => x.kind === "music") &&
+                  act("create_loop", {
+                    steps: apiSteps(),
+                    repeat: n,
+                    on_complete: onComplete,
+                  })
                 }
               />
             </div>
