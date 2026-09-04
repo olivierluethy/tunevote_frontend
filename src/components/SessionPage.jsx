@@ -15,6 +15,7 @@ import VotingBanner from "./session/VotingBanner";
 import ChangeRequestBanner from "./session/ChangeRequestBanner";
 import QuickChangeActions from "./session/QuickChangeActions";
 import ChangeHistory from "./session/ChangeHistory";
+import LoopStatusBanner from "./session/LoopStatusBanner";
 import QueuePreview from "./session/QueuePreview";
 import SearchPanel from "./session/SearchPanel";
 import Avatar from "./Avatar";
@@ -119,6 +120,7 @@ const SessionPage = () => {
   const [votedCrIds, setVotedCrIds] = useState(() => new Set());
   const [sessionEvents, setSessionEvents] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [activeLoops, setActiveLoops] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   // #51 — true once a search has actually run, so we can show a "not found →
@@ -345,6 +347,27 @@ const SessionPage = () => {
   // Undo is itself a democratic change request over a logged event.
   const undoEvent = (eventId) =>
     createChangeRequest("undo_event", { event_id: eventId });
+
+  const loadLoops = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await axios.get(`${API_BASE}/sessions/${sessionId}/loops`, {
+        headers: getAuthHeaders(),
+      });
+      setActiveLoops(res.data || []);
+    } catch (e) {
+      console.warn("[loops] load failed", e?.response?.status);
+    }
+  }, [sessionId]);
+
+  // Ending / re-sizing a loop are themselves democratic change requests.
+  const endLoop = (loopId) => createChangeRequest("end_loop", { loop_id: loopId });
+  const setLoopRuns = (loopId, totalRuns) =>
+    createChangeRequest("set_loop_runs", {
+      loop_id: loopId,
+      total_runs: totalRuns,
+      endless: totalRuns == null,
+    });
 
   const saveSessionName = async () => {
     const newName = editingName.trim();
@@ -734,8 +757,21 @@ const SessionPage = () => {
         setSessionLive(false);
       }
     });
+
+    // Loop objects (#66/#68): live run-x/y status, auto-updated by the engine.
+    socketRef.current.on("loop_updated", (status) => {
+      if (!status?.id) return;
+      setActiveLoops((prev) => {
+        const rest = prev.filter((l) => l.id !== status.id);
+        return status.status === "active"
+          ? [...rest, status].sort((a, b) => a.id - b.id)
+          : rest;
+      });
+    });
+
     loadChangeRequests();
     loadSessionEvents();
+    loadLoops();
 
     if (isHost && sessionId) {
       socketRef.current.emit("join-session-host", sessionId);
@@ -1608,6 +1644,12 @@ const SessionPage = () => {
             {/* #66/#67 — generic democratic change requests */}
             {sessionLive && (
               <div className="flex flex-col gap-2">
+                <LoopStatusBanner
+                  loops={activeLoops}
+                  onEnd={endLoop}
+                  onSetRuns={setLoopRuns}
+                  disabled={!isLiveJoined}
+                />
                 <ChangeRequestBanner
                   requests={changeRequests}
                   onVote={voteChangeRequest}
