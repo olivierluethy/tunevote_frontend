@@ -1,4 +1,22 @@
-# TuneVote — Frontend
+<div align="center">
+  <img src="assets/logo.png" alt="TuneVote" width="150" height="150" />
+  <h1>TuneVote — Frontend</h1>
+  <p>
+    <b>Real-time collaborative music voting.</b><br/>
+    Join a shared listening room, suggest songs, and let the crowd vote on what plays next — perfectly in sync across every device.
+  </p>
+  <p>
+    <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+    <img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black">
+    <img alt="Vite 7" src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white">
+    <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-3-38B2AC?logo=tailwindcss&logoColor=white">
+    <img alt="Socket.IO" src="https://img.shields.io/badge/Socket.IO-realtime-010101?logo=socketdotio&logoColor=white">
+    <img alt="PWA" src="https://img.shields.io/badge/PWA-installable-5A0FC8?logo=pwa&logoColor=white">
+  </p>
+  <p><i>The web client for the <a href="https://github.com/olivierluethy/tunevote_api">TuneVote API</a>.</i></p>
+</div>
+
+---
 
 The **web client** for TuneVote, a real-time collaborative music-listening app. People join a shared listening room ("session"), suggest YouTube songs, and vote in rounds to decide what plays next — with everyone's audio kept in sync across devices.
 
@@ -97,3 +115,11 @@ src/
 
 - Backend / API: [`tunevote_api`](https://github.com/olivierluethy/tunevote_api)
 - Production: frontend served at `app.tunevote.com`, backend at `api.tunevote.com`
+
+## License
+
+Released under the [MIT License](LICENSE) © Olivier Lüthy. You're free to use, modify and distribute this software, including commercially, as long as the copyright notice and license are included.
+
+## Author
+
+Built by **Olivier Lüthy** — [GitHub](https://github.com/olivierluethy). Part of the [TuneVote](https://github.com/olivierluethy?tab=repositories&q=tunevote) project.
