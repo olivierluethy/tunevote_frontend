@@ -14,7 +14,8 @@ const API_BASE = (import.meta.env.VITE_API_URL || "https://api.tunevote.com").re
 // ---------------------------------------------------------------------------
 // GLOBAL PLAYBACK PROVIDER
 //
-// This provider owns the single YouTube IFrame player, the live-playback
+// This provider owns the single audio player (an <audio> element fed by the
+// API's ad-free /stream/:videoId endpoint — see createPlayer), the live-playback
 // socket for the *active* session, and all playback-derived state (current
 // song, volume, mute, play/pause, voting phase, breaks). It is mounted ONCE
 // at the app root (see main.jsx) and never unmounts on navigation — which is
@@ -137,18 +138,15 @@ export const PlaybackProvider = ({ children }) => {
     currentSongRef.current = currentSong;
   }, [currentSong]);
 
-  // --- Load the YouTube IFrame API once for the whole app -------------------
-  useEffect(() => {
-    if (window.YT && window.YT.Player) return;
-    if (document.getElementById("youtube-iframe-api")) return;
-    const script = document.createElement("script");
-    script.id = "youtube-iframe-api";
-    script.src = "https://www.youtube.com/iframe_api";
-    document.body.appendChild(script);
-    window.onYouTubeIframeAPIReady = () => {
-      // API ready — players are created on demand in createPlayer().
-    };
-  }, []);
+  // --- Ad-free playback (#75) ----------------------------------------------
+  // Playback no longer uses the YouTube IFrame player (which serves provider
+  // ads). Instead each song is played through a plain <audio> element whose
+  // source is the API's /stream/:videoId endpoint — the ad-free audio track.
+  // createPlayer() builds an audio-backed adapter that exposes the SAME method
+  // surface the rest of this provider already relies on (play/pause/seek/mute/
+  // volume/getCurrentTime/getDuration/getPlayerState/getVideoData), so all the
+  // sync, Media Session and mini-player logic below is untouched. No IFrame API
+  // script needs loading anymore.
 
   // === Autoplay retry (browsers block muted autoplay) ======================
   const attemptPlay = (trigger) => {
@@ -190,6 +188,50 @@ export const PlaybackProvider = ({ children }) => {
     return true;
   };
 
+  // Build an <audio>-backed player that quacks like the YT player the rest of
+  // this provider talks to. Player states mirror the two YT constants the code
+  // checks: 1 = PLAYING, 2 = PAUSED.
+  const createAudioAdapter = (audio, videoId) => ({
+    _videoId: videoId,
+    playVideo() {
+      const p = audio.play();
+      if (p && typeof p.catch === "function") p.catch(() => {}); // autoplay-block → retried
+    },
+    pauseVideo() {
+      try { audio.pause(); } catch { /* not ready */ }
+    },
+    stopVideo() {
+      try {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      } catch { /* already gone */ }
+    },
+    destroy() {
+      try { audio.pause(); } catch { /* ignore */ }
+      audio.removeAttribute("src");
+      try { audio.load(); } catch { /* ignore */ }
+      audio.remove();
+    },
+    mute() { audio.muted = true; },
+    unMute() { audio.muted = false; },
+    setVolume(v) {
+      audio.volume = Math.max(0, Math.min(1, (Number(v) || 0) / 100));
+    },
+    seekTo(seconds) {
+      const t = Math.max(0, Number(seconds) || 0);
+      try {
+        audio.currentTime = Number.isFinite(audio.duration)
+          ? Math.min(t, audio.duration || t)
+          : t;
+      } catch { /* not seekable yet — the loadedmetadata handler re-applies */ }
+    },
+    getCurrentTime() { return audio.currentTime || 0; },
+    getDuration() { return Number.isFinite(audio.duration) ? audio.duration : 0; },
+    getPlayerState() { return audio.paused ? 2 : 1; },
+    getVideoData() { return { video_id: videoId }; },
+  });
+
   const createPlayer = (videoId, startSeconds = 0, shouldPlay = false) => {
     if (playerRef.current) {
       playerRef.current.destroy();
@@ -204,81 +246,82 @@ export const PlaybackProvider = ({ children }) => {
       ? { videoId, attempts: 0, lastTrigger: null }
       : null;
 
-    if (!window.YT || !window.YT.Player || !hostRef.current) {
-      // API (or the host wrapper) not ready yet — retry shortly.
+    if (!hostRef.current) {
+      // Host wrapper not mounted yet — retry shortly.
       setTimeout(() => createPlayer(videoId, startSeconds, shouldPlay), 300);
       return;
     }
 
-    // Hand YouTube a FRESH child node to replace, never the React-managed
-    // wrapper itself. YT.Player() swaps its target element for an <iframe>;
-    // if that target were a node React controls, React's later insert/remove
-    // operations would throw NotFoundError (corrupted reconciliation). The
-    // wrapper (hostRef) stays put; only this disposable child gets replaced.
+    // Fresh <audio> child inside the stable React-owned wrapper (same pattern as
+    // before: React never touches this disposable child, so reconciliation stays
+    // intact). Source is the API's ad-free audio stream for this video.
     hostRef.current.innerHTML = "";
-    const target = document.createElement("div");
-    hostRef.current.appendChild(target);
+    const audio = document.createElement("audio");
+    audio.preload = "auto";
+    audio.muted = !!mutedRef.current;
+    audio.volume = Math.max(0, Math.min(1, (Number(volumeRef.current) || 0) / 100));
+    audio.src = `${API}/stream/${videoId}`;
+    hostRef.current.appendChild(audio);
 
-    playerRef.current = new window.YT.Player(target, {
-      height: 0,
-      width: 0,
-      videoId,
-      playerVars: {
-        start: Math.floor(startSeconds),
-        autoplay: 0,
-        controls: 0,
-        modestbranding: 1,
-        rel: 0,
-        fs: 0,
-        playsinline: 1,
-      },
-      events: {
-        onReady: () => {
-          if (mutedRef.current) {
-            playerRef.current.mute();
-          } else {
-            playerRef.current.unMute();
-            playerRef.current.setVolume(volumeRef.current);
-          }
-          playerRef.current.seekTo(startSeconds, true);
+    const adapter = createAudioAdapter(audio, videoId);
+    playerRef.current = adapter;
 
-          if (shouldPlay) {
-            selfPausedRef.current = false;
-            attemptPlay("initial");
-            autoplayProbeRef.current = setTimeout(() => {
-              autoplayProbeRef.current = null;
-              const state = playerRef.current?.getPlayerState?.();
-              if (state === 1) return;
-              attemptPlay("probe");
-            }, 2000);
-          }
-        },
-        onStateChange: (e) => {
-          if (e.data === 1 /* PLAYING */) {
-            setIsPlaying(true);
-            if (autoplayProbeRef.current) {
-              clearTimeout(autoplayProbeRef.current);
-              autoplayProbeRef.current = null;
-            }
-            const pending = pendingPlayRef.current;
-            if (pending && pending.videoId === videoId) {
-              pendingPlayRef.current = null;
-            }
-          } else if (e.data === 2 /* PAUSED */) {
-            setIsPlaying(false);
-          }
-        },
-        onError: (e) => {
-          console.warn(`[autoplay] YT player error (code=${e?.data}) for ${videoId}`);
-          if (pendingPlayRef.current?.videoId === videoId) {
-            pendingPlayRef.current = null;
-          }
-          if (autoplayProbeRef.current) {
-            clearTimeout(autoplayProbeRef.current);
-            autoplayProbeRef.current = null;
-          }
-        },
-      },
+    // Seek to the live position as soon as the stream can be positioned.
+    let pendingSeek = startSeconds > 0 ? startSeconds : null;
+    let readyFired = false;
+
+    const onReady = () => {
+      if (mutedRef.current) {
+        adapter.mute();
+      } else {
+        adapter.unMute();
+        adapter.setVolume(volumeRef.current);
+      }
+      if (shouldPlay) {
+        selfPausedRef.current = false;
+        attemptPlay("initial");
+        autoplayProbeRef.current = setTimeout(() => {
+          autoplayProbeRef.current = null;
+          if (adapter.getPlayerState() === 1) return;
+          attemptPlay("probe");
+        }, 2000);
+      }
+    };
+
+    audio.addEventListener("loadedmetadata", () => {
+      if (pendingSeek != null) {
+        adapter.seekTo(pendingSeek);
+        pendingSeek = null;
+      }
+      if (!readyFired) {
+        readyFired = true;
+        onReady();
+      }
+    });
+
+    audio.addEventListener("playing", () => {
+      setIsPlaying(true);
+      if (autoplayProbeRef.current) {
+        clearTimeout(autoplayProbeRef.current);
+        autoplayProbeRef.current = null;
+      }
+      const pending = pendingPlayRef.current;
+      if (pending && pending.videoId === videoId) {
+        pendingPlayRef.current = null;
+      }
+    });
+
+    audio.addEventListener("pause", () => setIsPlaying(false));
+
+    audio.addEventListener("error", () => {
+      console.warn(`[stream] audio error for ${videoId}`);
+      if (pendingPlayRef.current?.videoId === videoId) {
+        pendingPlayRef.current = null;
+      }
+      if (autoplayProbeRef.current) {
+        clearTimeout(autoplayProbeRef.current);
+        autoplayProbeRef.current = null;
+      }
     });
   };
 
@@ -983,7 +1026,7 @@ export const PlaybackProvider = ({ children }) => {
 
   // Live song progress for the mini-player progress bar. Position is
   // server-authoritative (keeps advancing even if the local user paused their
-  // own audio); duration comes from the loaded YouTube player. Read-only —
+  // own audio); duration comes from the loaded audio stream. Read-only —
   // seeking is intentionally omitted because playback is synced session-wide.
   const getPlaybackProgress = () => {
     const player = playerRef.current;
@@ -1029,8 +1072,8 @@ export const PlaybackProvider = ({ children }) => {
       {children}
       {/* The single, persistent player host — lives at the app root so it
           survives route changes. React owns this wrapper but never touches its
-          contents; createPlayer() appends a disposable child inside it for the
-          YouTube iframe, so React reconciliation is never corrupted. */}
+          contents; createPlayer() appends a disposable <audio> child inside it,
+          so React reconciliation is never corrupted. */}
       <div
         ref={hostRef}
         aria-hidden="true"
